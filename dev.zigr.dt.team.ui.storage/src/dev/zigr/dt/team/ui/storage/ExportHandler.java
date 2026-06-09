@@ -3,7 +3,6 @@ package dev.zigr.dt.team.ui.storage;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.MessageFormat;
@@ -28,7 +27,6 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -108,27 +106,9 @@ public class ExportHandler implements IHandler {
 			return null;
 		}
 
-		boolean[] result = new boolean[] { true };
-		try {
-			new ProgressMonitorDialog(shell).run(true, false, monitor -> result[0] = pushAllDiff(allDiff, logger, monitor));
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause() != null ? e.getCause() : e;
-			logger.error(cause.getMessage(), cause);
-			result[0] = false;
-		} catch (InterruptedException e) {
-			logger.error(e.getMessage(), e);
-			Thread.currentThread().interrupt();
-			result[0] = false;
-		}
-		
-		// результат
-		if (result[0]) {
-			MessageDialog.openInformation(shell, "Поместить в хранилище",
-					"Операция успешно выполнена" + System.lineSeparator() + "Журнал: " + logger.getLogFile());
-		} else {
-			MessageDialog.openError(shell, "Поместить в хранилище",
-					"Операция не выполнена. Журнал: " + logger.getLogFile());
-		}
+		OperationLogDialog logDialog = new OperationLogDialog(shell, "Поместить в хранилище", logger,
+				monitor -> pushAllDiff(allDiff, logger, monitor));
+		logDialog.open();
 
 		return null;
 	}
