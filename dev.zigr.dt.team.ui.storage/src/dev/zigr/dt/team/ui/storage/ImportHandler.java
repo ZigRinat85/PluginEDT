@@ -180,10 +180,14 @@ public class ImportHandler implements IHandler {
 			logger.step("Получение изменений из ИБ в EDT штатным механизмом");
 			monitor.subTask("Получение изменений из ИБ в EDT");
 			InfobaseChangesResolutionResult syncResult = designer.retrieveConfigurationChangesFromInfobase(logger, monitor);
-			if (syncResult == InfobaseChangesResolutionResult.NO_CHANGES && !expectedObjects.isEmpty()) {
+			if (syncResult == InfobaseChangesResolutionResult.NO_CHANGES) {
 				logger.step("Полный XML-импорт из ИБ в EDT");
-				logger.detail("EDT вернула NO_CHANGES, но есть ожидаемые объекты из хранилища: "
-						+ expectedObjects.size());
+				if (expectedObjects.isEmpty()) {
+					logger.detail("EDT вернула NO_CHANGES; выполняем полный импорт из ИБ для сброса возможного устаревшего sync-state");
+				} else {
+					logger.detail("EDT вернула NO_CHANGES, но есть ожидаемые объекты из хранилища: "
+							+ expectedObjects.size());
+				}
 				monitor.subTask("Полный XML-импорт из ИБ в EDT");
 				exportDirectory = FileUtil.createTempDirectory("StorageDump", rootDirectory).toPath();
 				logger.detail("Каталог XML-выгрузки fallback: " + exportDirectory);
