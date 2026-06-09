@@ -55,6 +55,26 @@
                </visibleWhen>
             </command>
             <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
+                  id="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
                   commandId="dev.zigr.dt.team.ui.storage.command.settings"
                   id="dev.zigr.dt.team.ui.storage.command.settings"
                   style="push">
@@ -121,6 +141,11 @@
             defaultHandler="dev.zigr.dt.team.ui.storage.ImportHandler"
             id="dev.zigr.dt.team.ui.storage.command.import"
             name="Получить из хранилища">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageBranchBaselineHandler"
+            id="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
+            name="Обновить ветку хранилища текущей">
       </command>
       <command
             defaultHandler="dev.zigr.dt.team.ui.storage.SettingsHandler"
