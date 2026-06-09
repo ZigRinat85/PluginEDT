@@ -10,6 +10,8 @@ import org.osgi.service.prefs.BackingStoreException;
 import org.osgi.service.prefs.Preferences;
 
 public class Settings {
+	public static final String DEFAULT_COMMIT_COMMENT_TEMPLATE = "EDT: {branch}, project {project}, changed files {changedFiles}";
+
 	private Preferences preferences;
 	private ISecurePreferences secPreferences;
 
@@ -72,6 +74,18 @@ public class Settings {
 	public void setPushIfConfigurationChanged(boolean pushIfConfigurationChanged) {
 		preferences.put("pushIfConfigurationChanged", pushIfConfigurationChanged ? "true" : "false");
 		
+	}
+
+	public String getCommitCommentTemplate() {
+		String result = preferences.get("commitCommentTemplate", DEFAULT_COMMIT_COMMENT_TEMPLATE);
+		if (result.isBlank()) {
+			return DEFAULT_COMMIT_COMMENT_TEMPLATE;
+		}
+		return result;
+	}
+
+	public void setCommitCommentTemplate(String commitCommentTemplate) {
+		preferences.put("commitCommentTemplate", commitCommentTemplate);
 	}
 
 	public void flush() throws BackingStoreException, IOException {

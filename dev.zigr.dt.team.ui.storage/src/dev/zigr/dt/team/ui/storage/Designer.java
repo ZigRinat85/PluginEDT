@@ -6,6 +6,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,6 +111,10 @@ public class Designer {
 	public Version getVersion() {
 		return version;
 	}
+
+	public IProject getProject() {
+		return project;
+	}
 	
 	public void closeDesignerSession() throws RuntimeExecutionException {
 		thickClient.getExecutor().closeDesignerSession(thickClient.getComponent(), issueDescriptor.getInfobase(), null);
@@ -126,7 +132,7 @@ public class Designer {
 		return result;
 	}
 
-	public void loadConfigurationFromXml(Path sourceFolder, Path fileList) throws CoreException, IOException, InterruptedException, RuntimeExecutionException {
+	public void loadConfigurationFromXml(Path sourceFolder, Path fileList, OperationLogger logger) throws CoreException, IOException, InterruptedException, RuntimeExecutionException {
 		Path log = rootDirectory.resolve("loadCfgOut.txt");
 		
 		RuntimeExecutionCommandBuilder command = getCommandBuilder(log)
@@ -135,24 +141,126 @@ public class Designer {
 		if (!extensionName.isEmpty()) {
 			command.forExtension(extensionName);
 		}
+		command.additionalParameters(getRepositoryConnectionParameters());
 		
 		Process process = command.start();
 		int returnCode = process.waitFor();
-		if (returnCode == 0) {
-			// актуализация ConfigDumpInfo.xml в ветке хранилища
-			IUpdateProjectFlow updateProjectFlow = getInfobaseSynchronizationStateManager().startUpdateProjectFlow(
-					getV8ProjectManager().getProject(project).getDtProject(), issueDescriptor.getInfobase());
-			updateProjectFlow.setActualConfigDumpInfo(sourceFolder); // передаем именно каталог, где лежит файл ConfigDumpInfo.xml
-			// updateProjectFlow.setActualGenerationId(retrieveGenerationId()); для нас необязательно
-			updateProjectFlow.finish();
-		}
-		else {
+		logger.commandResult("Загрузка XML в конфигурацию", log, returnCode);
+		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
 		}
 	}
+
+	public void commitObjects(Path lockObjectsList, String comment, OperationLogger logger)
+			throws CoreException, IOException, InterruptedException {
+		Path log = rootDirectory.resolve("commitObjectsOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+		String additionalStartupParameters = getRepositoryConnectionParameters()
+			+ " /ConfigurationRepositoryCommit -Objects " + quoteParameter(lockObjectsList.toString())
+			+ " -comment " + quoteParameter(comment)
+			+ " -force";
+		if (!extensionName.isEmpty()) {
+			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
+		}
+		command.additionalParameters(additionalStartupParameters);
+
+		Process process = command.start();
+		int returnCode = process.waitFor();
+		logger.commandResult("Помещение изменений в хранилище", log, returnCode);
+		if (returnCode != 0) {
+			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
+			throw new CoreException(status);
+		}
+	}
+
+	public void updateConfigurationFromRepository(OperationLogger logger)
+			throws CoreException, IOException, InterruptedException {
+		Path log = rootDirectory.resolve("updateCfgOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+		String additionalStartupParameters = getRepositoryConnectionParameters()
+			+ " /ConfigurationRepositoryUpdateCfg -revised -force";
+		if (!extensionName.isEmpty()) {
+			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
+		}
+		command.additionalParameters(additionalStartupParameters);
+
+		Process process = command.start();
+		int returnCode = process.waitFor();
+		logger.commandResult("Получение конфигурации из хранилища", log, returnCode);
+		if (returnCode != 0) {
+			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
+			throw new CoreException(status);
+		}
+	}
+
+	public void dumpConfigurationToXml(Path exportDirectory, OperationLogger logger)
+			throws CoreException, IOException, InterruptedException, RuntimeExecutionException {
+		Path log = rootDirectory.resolve("dumpCfgOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log)
+			.exportXmlFromInfobase(exportDirectory);
+		if (!extensionName.isEmpty()) {
+			command.forExtension(extensionName);
+		}
+
+		Process process = command.start();
+		int returnCode = process.waitFor();
+		logger.commandResult("Выгрузка конфигурации в XML", log, returnCode);
+		if (returnCode != 0) {
+			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
+			throw new CoreException(status);
+		}
+	}
+
+	public void updateProjectSynchronizationState(Path sourceFolder, OperationLogger logger) throws CoreException {
+		// актуализация ConfigDumpInfo.xml в ветке хранилища
+		IUpdateProjectFlow updateProjectFlow = null;
+		try {
+			updateProjectFlow = getInfobaseSynchronizationStateManager().startUpdateProjectFlow(
+					getV8ProjectManager().getProject(project).getDtProject(), issueDescriptor.getInfobase());
+			updateActualConfigDumpInfo(updateProjectFlow, sourceFolder); // передаем именно каталог, где лежит файл ConfigDumpInfo.xml
+			// updateProjectFlow.setActualGenerationId(retrieveGenerationId()); для нас необязательно
+			updateProjectFlow.finish();
+			logger.detail("Состояние синхронизации EDT обновлено по " + sourceFolder.resolve("ConfigDumpInfo.xml"));
+		} catch (Exception e) {
+			if (updateProjectFlow != null && !updateProjectFlow.isFinished()) {
+				try {
+					updateProjectFlow.cancel();
+				} catch (Exception cancelException) {
+					e.addSuppressed(cancelException);
+				}
+			}
+			IStatus status = StorageUiPlugin.createErrorStatus("Не удалось обновить состояние синхронизации проекта после операции с хранилищем", e);
+			throw new CoreException(status);
+		}
+	}
+
+	private void updateActualConfigDumpInfo(IUpdateProjectFlow updateProjectFlow, Path sourceFolder) throws Exception {
+		try {
+			invokeUpdateProjectFlowMethod(updateProjectFlow, "loadActualConfigDumpInfo", sourceFolder);
+		} catch (NoSuchMethodException e) {
+			invokeUpdateProjectFlowMethod(updateProjectFlow, "setActualConfigDumpInfo", sourceFolder);
+		}
+	}
+
+	private void invokeUpdateProjectFlowMethod(IUpdateProjectFlow updateProjectFlow, String methodName, Path sourceFolder)
+			throws Exception {
+		Method method = updateProjectFlow.getClass().getMethod(methodName, Path.class);
+		try {
+			method.invoke(updateProjectFlow, sourceFolder);
+		} catch (InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception exception) {
+				throw exception;
+			}
+			if (cause instanceof Error error) {
+				throw error;
+			}
+			throw e;
+		}
+	}
 	
-	public void lockObjects(Map<QualifiedName, Boolean> lockObjects) throws IOException, CoreException, InterruptedException {
+	public Path lockObjects(Map<QualifiedName, Boolean> lockObjects, OperationLogger logger) throws IOException, CoreException, InterruptedException {
 		// формирование файла со списком объектов для захвата
 		Path lockObjectsList = rootDirectory.resolve("lockObjectsList.xml");
 		String strTemplate = "<Object fullName = \"{0}\" includeChildObjects = \"{1}\" />";
@@ -174,15 +282,12 @@ public class Designer {
 		
 		Path log = rootDirectory.resolve("lockObjectsOut.txt");
 		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
-		Settings storageSettings = new Settings(project.getName());
-		String additionalStartupParameters = "/ConfigurationRepositoryF "+storageSettings.getAddress()
-		+ " /ConfigurationRepositoryN "+storageSettings.getUser()
-		+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP "+storageSettings.getPassword())
-		+ " /ConfigurationRepositoryLock -Objects " + lockObjectsList.toString()
+		String additionalStartupParameters = getRepositoryConnectionParameters()
+		+ " /ConfigurationRepositoryLock -Objects " + quoteParameter(lockObjectsList.toString())
 		+ "{0}";
 		
 		if (!extensionName.isEmpty()) {
-			command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + extensionName));
+			command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(extensionName)));
 		}
 		else {
 			command.additionalParameters(MessageFormat.format(additionalStartupParameters, ""));
@@ -190,6 +295,7 @@ public class Designer {
 		
 		Process process = command.start();
 		int returnCode = process.waitFor();
+		logger.commandResult("Захват объектов в хранилище", log, returnCode);
 		if (returnCode != 0) {
 			if (!extensionName.isEmpty()) { // имя расширения могло быть переименовано в EDT
 				Path logListExtNames = rootDirectory.resolve("listExtNamesOut.txt");
@@ -197,6 +303,7 @@ public class Designer {
 				command.listConfigurationExtensions();
 				process = command.start();
 				returnCode = process.waitFor();
+				logger.commandResult("Получение списка расширений ИБ", logListExtNames, returnCode);
 				if (returnCode != 0) {
 					IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(logListExtNames));
 					throw new CoreException(status);
@@ -208,9 +315,10 @@ public class Designer {
 						while ((line = reader.readLine()) != null) {
 							Path logExtensionLockObjects = rootDirectory.resolve("extensionObjectsOut.txt");
 							command = getCommandBuilder(logExtensionLockObjects);
-							command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + line));
+							command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(line)));
 							process = command.start();
 							returnCode = process.waitFor();
+							logger.commandResult("Захват объектов в расширении " + line, logExtensionLockObjects, returnCode);
 							if (returnCode == 0) {
 								extensionName = line;
 								extensionIsFound = true;
@@ -218,6 +326,7 @@ public class Designer {
 							}
 						}
 						if (!extensionIsFound) {
+							Settings storageSettings = new Settings(project.getName());
 							IStatus status = StorageUiPlugin.createErrorStatus("В ИБ не обнаружено расширение, подключенное к хранилищу "
 										+ storageSettings.getAddress());
 							throw new CoreException(status);
@@ -232,9 +341,10 @@ public class Designer {
 				throw new CoreException(status);
 			}
 		}
+		return lockObjectsList;
 	}
 
-	public boolean isConfigurationSame() throws CoreException, IOException, InterruptedException {
+	public boolean isConfigurationSame(OperationLogger logger) throws CoreException, IOException, InterruptedException {
 		Path log = rootDirectory.resolve("compareCfgOut.txt");
 		Path reportFile = rootDirectory.resolve("compareCfgReport.txt");
 		
@@ -244,20 +354,22 @@ public class Designer {
 			+ "-FirstConfigurationType {0} -SecondConfigurationType {1} "
 			+ "-IncludeChangedObjects -IncludeDeletedObjects -IncludeAddedObjects "
 			+ "-ReportType Brief -ReportFormat txt "
-			+ "-ReportFile " + reportFile.toString();
+			+ "-ReportFile " + quoteParameter(reportFile.toString());
 		
 		if (!extensionName.isEmpty()) {
 			additionalStartupParameters = MessageFormat.format(additionalStartupParameters, 
-				"ExtensionConfiguration -FirstName "+extensionName, "ExtensionDBConfiguration -SecondName "+extensionName);
+				"ExtensionConfiguration -FirstName " + quoteParameter(extensionName),
+				"ExtensionDBConfiguration -SecondName " + quoteParameter(extensionName));
 		}
 		else {
 			additionalStartupParameters = MessageFormat.format(additionalStartupParameters, "MainConfiguration", "DBConfiguration");
 		}
 		
-		command.additionalParameters(additionalStartupParameters);
+		command.additionalParameters(getRepositoryConnectionParameters() + " " + additionalStartupParameters);
 		
 		Process process = command.start();
 		int returnCode = process.waitFor();
+		logger.commandResult("Сравнение конфигурации с конфигурацией БД", log, returnCode);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -271,8 +383,10 @@ public class Designer {
 		}
 		
 		if (lineCount == 6) { // нет изменений
+			logger.detail("Сравнение: конфигурация и конфигурация БД совпадают");
 			return true;
 		} else {
+			logger.detail("Сравнение: найдены отличия, строк в отчете: " + lineCount + ", отчет=" + reportFile);
 			return false;
 		}
 	}
@@ -303,6 +417,17 @@ public class Designer {
 		result = result.replaceAll("\r\n", "");
 		
 		return result;
+	}
+
+	private String getRepositoryConnectionParameters() {
+		Settings storageSettings = new Settings(project.getName());
+		return "/ConfigurationRepositoryF " + quoteParameter(storageSettings.getAddress())
+			+ " /ConfigurationRepositoryN " + quoteParameter(storageSettings.getUser())
+			+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP " + quoteParameter(storageSettings.getPassword()));
+	}
+
+	private String quoteParameter(String value) {
+		return "\"" + value.replace("\"", "'") + "\"";
 	}
 
 }

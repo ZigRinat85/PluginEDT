@@ -22,6 +22,7 @@ public class SettingsDialog extends Dialog {
 	private Text txtAddress;
 	private Text txtUser;
 	private Text txtPassword;
+	private Text txtCommitCommentTemplate;
 	private Button btnExportMDWithMDO;
 	private Button btnPushIfConfigurationChanged;
 
@@ -73,6 +74,21 @@ public class SettingsDialog extends Dialog {
 		btnPushIfConfigurationChanged.setSelection(storageSettings.getPushIfConfigurationChanged());
 		Label lblPushIfConfigurationChanged = new Label(container, SWT.NONE);
 		lblPushIfConfigurationChanged.setText("Помещать даже если конфигурации различаются");
+
+		// commitCommentTemplate
+		Label lblCommitCommentTemplate = new Label(container, SWT.NONE);
+		lblCommitCommentTemplate.setText("Шаблон комментария:");
+		txtCommitCommentTemplate = new Text(container, SWT.BORDER);
+		GridData commitCommentTemplateGridData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+		commitCommentTemplateGridData.widthHint = 620;
+		txtCommitCommentTemplate.setLayoutData(commitCommentTemplateGridData);
+		txtCommitCommentTemplate.setText(storageSettings.getCommitCommentTemplate());
+
+		Label lblCommitCommentTemplateHelp = new Label(container, SWT.WRAP);
+		lblCommitCommentTemplateHelp.setText("Доступные поля: {branch}, {storageBranch}, {project}, {changedFiles}, {fileCount}, {files}, {infobase}");
+		GridData commitCommentTemplateHelpGridData = new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1);
+		commitCommentTemplateHelpGridData.widthHint = 620;
+		lblCommitCommentTemplateHelp.setLayoutData(commitCommentTemplateHelpGridData);
 		
 		return container;
 	}
@@ -96,6 +112,7 @@ public class SettingsDialog extends Dialog {
 			storageSettings.setPassword(txtPassword.getText());
 			storageSettings.setExportMDWithMDO(btnExportMDWithMDO.getSelection());
 			storageSettings.setPushIfConfigurationChanged(btnPushIfConfigurationChanged.getSelection());
+			storageSettings.setCommitCommentTemplate(txtCommitCommentTemplate.getText());
 			storageSettings.flush();
 			
 			super.okPressed();
