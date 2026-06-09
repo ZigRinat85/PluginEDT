@@ -13,6 +13,7 @@ Implement and stabilize the "Get from storage" flow for the EDT storage plugin.
 - Removed XML fallback from the storage pull path because it is not the standard EDT infobase-to-project import flow and can create noisy project file changes.
 - Added a command to update the selected storage Git branch to the current branch after a successful 1C storage push, so the next push compares only new changes.
 - Changed "Put to storage" to use the same live operation log dialog as "Get from storage" instead of the generic progress dialog.
+- Added an automatic recovery option to the "configuration differs from DB after lock" warning: update DB, checkout storage branch, retrieve changes from infobase through EDT sync, commit them, checkout current branch, and merge the storage branch.
 - Deployed compiled classes into the installed EDT bundle in the local p2 pool.
 
 ## Pending
@@ -22,6 +23,7 @@ Implement and stabilize the "Get from storage" flow for the EDT storage plugin.
 - If EDT sync returns `NO_CHANGES` after storage reported changed objects, investigate an EDT sync-state reset/reconnect using EDT APIs instead of XML import.
 - Verify the storage-branch update command appears next to storage import/export actions and fast-forwards only when the selected storage branch is an ancestor of the current branch.
 - Verify "Put to storage" shows live text output for steps and batch command output.
+- Verify the automatic recovery button refuses dirty Git worktrees and stops the current push after merging so the next push recalculates the diff.
 
 ## Next Action
 Restart EDT Ruby 2026.1.1, run "Получить из хранилища", and inspect the live log for `CHANGES_RESOLVED` or a clear `NO_CHANGES` diagnostic without XML fallback.
@@ -33,6 +35,7 @@ Restart EDT Ruby 2026.1.1, run "Получить из хранилища", and i
 - Treat `NO_CHANGES` with expected storage objects as an error condition; do not perform XML fallback.
 - Move the storage Git baseline only by fast-forwarding the selected local storage branch to the current branch; do not perform automatic merge commits from the plugin.
 - Use `OperationLogDialog` for long storage operations so users can see command text and output immediately.
+- After automatic recovery from storage changes during lock, do not continue with the stale pre-merge diff; ask the user to rerun push.
 - Save completed work as git commits after each meaningful step going forward.
 
 ## Modified Files

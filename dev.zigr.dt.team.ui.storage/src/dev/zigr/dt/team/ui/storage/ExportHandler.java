@@ -18,6 +18,7 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.commands.IHandler;
 import org.eclipse.core.commands.IHandlerListener;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.Adapters;
@@ -29,9 +30,13 @@ import org.eclipse.emf.ecore.EObject;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.MergeResult;
+import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.RenameDetector;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
@@ -61,6 +66,10 @@ import com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor;
 import com.google.inject.Inject;
 
 public class ExportHandler implements IHandler {
+
+	private static final int CONFIG_CHANGED_ACTION_AUTO = 0;
+	private static final int CONFIG_CHANGED_ACTION_CONTINUE = 1;
+	private static final int CONFIG_CHANGED_ACTION_CANCEL = 2;
 
 	@Inject
 	private IQualifiedNameFilePathConverter qualifiedNameFilePathConverter;
@@ -145,7 +154,7 @@ public class ExportHandler implements IHandler {
 				} else {
 					result = false;
 				}
-			} catch (IOException | CoreException | RuntimeExecutionException | InterruptedException e) {
+			} catch (IOException | CoreException | RuntimeExecutionException | InterruptedException | GitAPIException e) {
 				logger.error(e.getMessage(), e);
 				result = false;
 			}
@@ -166,10 +175,11 @@ public class ExportHandler implements IHandler {
 		return result;
 	}
 
-	private boolean pushBranchDiff(String projectName, List<DiffEntry> diff, Path rootDirectory, OperationLogger logger, IProgressMonitor monitor) throws IOException, CoreException, RuntimeExecutionException, InterruptedException {
+	private boolean pushBranchDiff(String projectName, List<DiffEntry> diff, Path rootDirectory, OperationLogger logger, IProgressMonitor monitor) throws IOException, CoreException, RuntimeExecutionException, InterruptedException, GitAPIException {
 		Path exportDirectory = FileUtil.createTempDirectory("Export", rootDirectory).toPath();
 		Designer designer = new Designer(issueDescriptor, projectName, rootDirectory);
 		logger.detail("Каталог XML-выгрузки: " + exportDirectory);
+		try {
 		
 		// закрытие агента конфигуратора
 		logger.step("Закрытие активной сессии конфигуратора");
@@ -197,17 +207,13 @@ public class ExportHandler implements IHandler {
 		monitor.subTask("Сравнение конфигурации и конфигурации БД");
 		if (!designer.isConfigurationSame(logger)) {
 			if (storageSettings.getPushIfConfigurationChanged()) {
-				int[] buttonId = new int[] { SWT.NO };
-				shell.getDisplay().syncExec(() -> {
-					MessageBox dialog = new MessageBox(shell, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-					dialog.setText("Внимание!!!");
-					String textMessage = textMessageIfConfigurationChanged(projectName)
-							+ System.lineSeparator() + System.lineSeparator()
-							+ "Все равно продолжить помещение?";
-					dialog.setMessage(textMessage);
-					buttonId[0] = dialog.open();
-				});
-				if (buttonId[0] == SWT.NO) {
+				int action = selectConfigurationChangedAction(projectName);
+				if (action == CONFIG_CHANGED_ACTION_AUTO) {
+					runAutomaticStorageBranchUpdate(projectName, designer, logger, monitor);
+					logger.detail("Автоматическое обновление ветки хранилища выполнено. Повторите помещение в хранилище, чтобы пересчитать diff.");
+					return false;
+				}
+				if (action != CONFIG_CHANGED_ACTION_CONTINUE) {
 					String message = MessageFormat.format("Операция помещения в хранилище отменена пользователем. ИБ={0}. Проект={1}",
 							issueDescriptor.getInfobase().getName(), projectName);
 					StorageUiPlugin.logInfo(message);
@@ -267,9 +273,131 @@ public class ExportHandler implements IHandler {
 		monitor.subTask("Обновление состояния синхронизации EDT");
 		designer.updateProjectSynchronizationState(exportDirectory, logger);
 		
-		// 
-		designer.dispose();
 		return true;
+		} finally {
+			designer.dispose();
+		}
+	}
+
+	private int selectConfigurationChangedAction(String projectName) {
+		int[] result = new int[] { CONFIG_CHANGED_ACTION_CANCEL };
+		shell.getDisplay().syncExec(() -> {
+			String textMessage = textMessageIfConfigurationChanged(projectName)
+					+ System.lineSeparator() + System.lineSeparator()
+					+ "Что сделать?";
+			MessageDialog dialog = new MessageDialog(shell, "Внимание!!!", null, textMessage,
+					MessageDialog.WARNING,
+					new String[] { "Выполнить автоматически", "Продолжить", "Отмена" },
+					CONFIG_CHANGED_ACTION_CANCEL);
+			result[0] = dialog.open();
+		});
+		return result[0];
+	}
+
+	private void runAutomaticStorageBranchUpdate(String projectName, Designer designer, OperationLogger logger,
+			IProgressMonitor monitor) throws IOException, CoreException, RuntimeExecutionException,
+			InterruptedException, GitAPIException {
+		Repository repository = issueDescriptor.getRepository();
+		String currentBranchRef = repository.getFullBranch();
+		String storageBranchRef = issueDescriptor.getBranch().getName();
+		validateBranchRefs(currentBranchRef, storageBranchRef);
+
+		String currentBranch = Repository.shortenRefName(currentBranchRef);
+		String storageBranch = Repository.shortenRefName(storageBranchRef);
+
+		try (Git git = new Git(repository)) {
+			ensureCleanGitWorkTree(git, logger);
+
+			logger.step("Обновление конфигурации БД изменениями из хранилища");
+			monitor.subTask("Обновление конфигурации БД");
+			designer.updateDatabaseConfiguration(logger);
+
+			logger.step("Переключение на ветку хранилища " + storageBranch);
+			monitor.subTask("Переключение Git-ветки");
+			designer.closeDesignerSession();
+			git.checkout().setName(storageBranch).call();
+			refreshWorkspace(logger);
+
+			logger.step("Импорт изменений из ИБ в ветку хранилища");
+			monitor.subTask("Импорт изменений из ИБ");
+			designer.retrieveConfigurationChangesFromInfobase(logger, monitor);
+			commitStorageBranchChanges(git, storageBranch, logger);
+
+			ObjectId storageBranchCommit = repository.resolve(storageBranchRef);
+			if (storageBranchCommit == null) {
+				throw new IOException("Не найден коммит ветки хранилища после импорта: " + storageBranchRef);
+			}
+
+			logger.step("Возврат на текущую ветку " + currentBranch);
+			monitor.subTask("Возврат на текущую ветку");
+			designer.closeDesignerSession();
+			git.checkout().setName(currentBranch).call();
+			refreshWorkspace(logger);
+
+			logger.step("Слияние ветки хранилища в текущую ветку");
+			monitor.subTask("Слияние Git-ветки");
+			MergeResult mergeResult = git.merge().include(storageBranchCommit).setCommit(true).call();
+			logger.detail("Результат merge: " + mergeResult.getMergeStatus());
+			if (!mergeResult.getMergeStatus().isSuccessful()) {
+				throw new CoreException(StorageUiPlugin.createErrorStatus(
+						"Не удалось автоматически слить ветку хранилища: " + mergeResult.getMergeStatus()));
+			}
+			refreshWorkspace(logger);
+		}
+	}
+
+	private void validateBranchRefs(String currentBranchRef, String storageBranchRef) throws IOException {
+		if (currentBranchRef == null || !currentBranchRef.startsWith(Constants.R_HEADS)) {
+			throw new IOException("Текущий Git HEAD не является локальной веткой");
+		}
+		if (storageBranchRef == null || !storageBranchRef.startsWith(Constants.R_HEADS)) {
+			throw new IOException("Ветка хранилища не является локальной веткой: " + storageBranchRef);
+		}
+		if (currentBranchRef.equals(storageBranchRef)) {
+			throw new IOException("Ветка хранилища уже является текущей веткой");
+		}
+	}
+
+	private void ensureCleanGitWorkTree(Git git, OperationLogger logger) throws GitAPIException, CoreException {
+		Status status = git.status().call();
+		logGitStatus("Состояние Git перед автоматическим обновлением", status, logger);
+		if (!status.isClean()) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"Нельзя автоматически переключать ветки: в рабочем каталоге Git есть незакоммиченные изменения"));
+		}
+	}
+
+	private void commitStorageBranchChanges(Git git, String storageBranch, OperationLogger logger)
+			throws GitAPIException {
+		Status status = git.status().call();
+		logGitStatus("Изменения ветки хранилища после импорта из ИБ", status, logger);
+		if (status.isClean()) {
+			logger.detail("Ветка хранилища не изменилась после импорта из ИБ");
+			return;
+		}
+
+		git.add().addFilepattern(".").call();
+		git.add().addFilepattern(".").setUpdate(true).call();
+		RevCommit commit = git.commit()
+				.setMessage("Import storage changes from infobase")
+				.call();
+		logger.detail("Коммит в ветке хранилища " + storageBranch + ": " + commit.getName());
+	}
+
+	private void logGitStatus(String title, Status status, OperationLogger logger) {
+		logger.detail(title + ": clean=" + status.isClean()
+				+ ", added=" + status.getAdded().size()
+				+ ", changed=" + status.getChanged().size()
+				+ ", modified=" + status.getModified().size()
+				+ ", removed=" + status.getRemoved().size()
+				+ ", missing=" + status.getMissing().size()
+				+ ", untracked=" + status.getUntracked().size()
+				+ ", conflicting=" + status.getConflicting().size());
+	}
+
+	private void refreshWorkspace(OperationLogger logger) throws CoreException {
+		ResourcesPlugin.getWorkspace().getRoot().refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
+		logger.detail("Workspace обновлен после Git-операции");
 	}
 
 	private EObject[] getTopObjects(String projectName, List<DiffEntry> diff) {
