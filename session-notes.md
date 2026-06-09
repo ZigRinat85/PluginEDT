@@ -10,23 +10,23 @@ Implement and stabilize the "Get from storage" flow for the EDT storage plugin.
 - Replaced the main pull path with EDT's standard infobase-to-project synchronization API.
 - Added logging for EDT sync results, incoming infobase object changes, and async conflict resolution.
 - Raised OSGi sync package requirements to EDT Ruby 2026.1.1 core sync API versions.
-- Added fallback for any `NO_CHANGES` EDT sync result: close the Designer session opened by EDT sync, full XML dump from infobase, full EDT XML import, then sync-state update.
+- Removed XML fallback from the storage pull path because it is not the standard EDT infobase-to-project import flow and can create noisy project file changes.
 - Deployed compiled classes into the installed EDT bundle in the local p2 pool.
 
 ## Pending
 - Restart EDT so the running process loads the latest `ImportHandler.class` and `Designer.class`.
 - Re-run "Get from storage" on a branch with known changes.
-- Verify that when EDT sync returns `NO_CHANGES`, the fallback logs `Полный XML-импорт из ИБ в EDT`, closes the EDT-opened Designer session before XML export, and project files are updated.
-- If fallback is too slow, investigate a safer non-mapping partial import or a forced EDT sync-state refresh before `retrieveInfobaseChanges`.
+- Verify that when EDT sync returns `CHANGES_RESOLVED`, project files are updated only through the standard EDT sync API.
+- If EDT sync returns `NO_CHANGES` after storage reported changed objects, investigate an EDT sync-state reset/reconnect using EDT APIs instead of XML import.
 
 ## Next Action
-Restart EDT Ruby 2026.1.1, run "Получить из хранилища", and inspect the live log for either `CHANGES_RESOLVED` or the fallback `Полный XML-импорт из ИБ в EDT`.
+Restart EDT Ruby 2026.1.1, run "Получить из хранилища", and inspect the live log for `CHANGES_RESOLVED` or a clear `NO_CHANGES` diagnostic without XML fallback.
 
 ## Key Decisions
 - Do not rely on custom storage-object-to-XML-path mapping as the primary path.
 - Use EDT standard synchronization first because it is the closest match to "changed in infobase, then EDT imports".
 - Treat `CHANGES_NOT_RESOLVED` with successful async status as successful because EDT reports deferred conflict resolution separately.
-- Treat `NO_CHANGES` as suspicious in this storage-pull flow, and fall back to a full XML import to avoid silently losing updates after EDT/project-side reverts or stale sync-state.
+- Treat `NO_CHANGES` with expected storage objects as an error condition; do not perform XML fallback.
 - Save completed work as git commits after each meaningful step going forward.
 
 ## Modified Files

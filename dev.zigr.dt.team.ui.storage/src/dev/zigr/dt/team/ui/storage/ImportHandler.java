@@ -181,22 +181,12 @@ public class ImportHandler implements IHandler {
 			monitor.subTask("Получение изменений из ИБ в EDT");
 			InfobaseChangesResolutionResult syncResult = designer.retrieveConfigurationChangesFromInfobase(logger, monitor);
 			if (syncResult == InfobaseChangesResolutionResult.NO_CHANGES) {
-				logger.step("Полный XML-импорт из ИБ в EDT");
-				if (expectedObjects.isEmpty()) {
-					logger.detail("EDT вернула NO_CHANGES; выполняем полный импорт из ИБ для сброса возможного устаревшего sync-state");
-				} else {
-					logger.detail("EDT вернула NO_CHANGES, но есть ожидаемые объекты из хранилища: "
-							+ expectedObjects.size());
+				logger.detail("EDT API вернул NO_CHANGES; XML fallback отключен, чтобы не менять проект вне штатного импорта EDT");
+				if (!expectedObjects.isEmpty()) {
+					throw new CoreException(StorageUiPlugin.createErrorStatus(
+							"EDT не импортировала ожидаемые изменения из ИБ: штатный API вернул NO_CHANGES, ожидаемых объектов="
+									+ expectedObjects.size()));
 				}
-				logger.detail("Закрытие сессии конфигуратора, открытой штатным механизмом EDT, перед XML-выгрузкой");
-				designer.closeDesignerSession();
-				monitor.subTask("Полный XML-импорт из ИБ в EDT");
-				exportDirectory = FileUtil.createTempDirectory("StorageDump", rootDirectory).toPath();
-				logger.detail("Каталог XML-выгрузки fallback: " + exportDirectory);
-				designer.dumpConfigurationToXml(exportDirectory, logger);
-				logDumpSummary(exportDirectory, logger);
-				importXmlToProject(designer.getProject(), designer.getVersion(), exportDirectory, logger);
-				designer.updateProjectSynchronizationState(exportDirectory, logger);
 			}
 			clearPendingObjects(project, logger);
 			success = true;
