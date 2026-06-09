@@ -8,14 +8,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.nio.file.StandardOpenOption;
 
 public class OperationLogger {
+
+	public interface Listener {
+		void lineWritten(String line);
+	}
 
 	private static final DateTimeFormatter FILE_NAME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 	private static final DateTimeFormatter LINE_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
 	private final Path logFile;
+	private final List<Listener> listeners = new CopyOnWriteArrayList<Listener>();
 	private int stepNumber;
 
 	public static OperationLogger create() throws IOException {
@@ -40,6 +47,14 @@ public class OperationLogger {
 		return logFile;
 	}
 
+	public void addListener(Listener listener) {
+		listeners.add(listener);
+	}
+
+	public void removeListener(Listener listener) {
+		listeners.remove(listener);
+	}
+
 	public void step(String message) {
 		stepNumber++;
 		write("STEP " + stepNumber + ". " + message);
@@ -51,7 +66,14 @@ public class OperationLogger {
 	}
 
 	public void commandResult(String title, Path log, int returnCode) {
+		commandResult(title, log, returnCode, true);
+	}
+
+	public void commandResult(String title, Path log, int returnCode, boolean includeOutput) {
 		detail(title + ": returnCode=" + returnCode + ", log=" + log);
+		if (!includeOutput) {
+			return;
+		}
 		String output = readText(log);
 		if (!output.isBlank()) {
 			detail(title + " output:");
@@ -80,6 +102,13 @@ public class OperationLogger {
 					StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
 		} catch (IOException e) {
 			StorageUiPlugin.logError(e.getMessage(), e);
+		}
+		for (Listener listener : listeners) {
+			try {
+				listener.lineWritten(line);
+			} catch (RuntimeException e) {
+				StorageUiPlugin.logError(e.getMessage(), e);
+			}
 		}
 	}
 

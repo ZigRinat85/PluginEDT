@@ -12,8 +12,8 @@ Import-Package: com._1c.g5.v8.activitytracking.core;version="1.0.0",
  com._1c.g5.v8.dt.export;version="7.2.300",
  com._1c.g5.v8.dt.metadata.mdclass;version="10.0.0",
  com._1c.g5.v8.dt.platform.services.core.infobases;version="13.0.0",
- com._1c.g5.v8.dt.platform.services.core.infobases.sync;version="9.0.0",
- com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2;version="1.0.0",
+ com._1c.g5.v8.dt.platform.services.core.infobases.sync;version="12.0.0",
+ com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2;version="3.0.0",
  com._1c.g5.v8.dt.platform.services.core.runtimes;version="10.0.0",
  com._1c.g5.v8.dt.platform.services.core.runtimes.environments;version="4.0.0",
  com._1c.g5.v8.dt.platform.services.core.runtimes.execution;version="13.0.0",
@@ -23,7 +23,8 @@ Import-Package: com._1c.g5.v8.activitytracking.core;version="1.0.0",
  com._1c.g5.v8.dt.team;version="1.0.1200",
  com._1c.g5.v8.dt.team.git.infobases;version="1.0.2200",
  com._1c.g5.wiring;version="2.4.0",
- com._1c.g5.wiring.binder;version="1.2.0"
+ com._1c.g5.wiring.binder;version="1.2.0",
+ org.eclipse.emf.ecore
 Bundle-Activator: dev.zigr.dt.team.ui.storage.StorageUiPlugin
 Bundle-Vendor: Ziganshin Rinat
 Require-Bundle: org.eclipse.ui,

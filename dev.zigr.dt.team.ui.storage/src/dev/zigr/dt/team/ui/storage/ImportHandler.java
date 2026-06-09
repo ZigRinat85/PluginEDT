@@ -30,7 +30,6 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.swt.widgets.Shell;
@@ -38,6 +37,7 @@ import org.eclipse.ui.handlers.HandlerUtil;
 import org.osgi.framework.Bundle;
 
 import com._1c.g5.v8.dt.common.FileUtil;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
 import com._1c.g5.v8.dt.platform.services.core.runtimes.execution.RuntimeExecutionException;
 import com._1c.g5.v8.dt.platform.version.Version;
 import com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor;
@@ -78,27 +78,9 @@ public class ImportHandler implements IHandler {
 			return null;
 		}
 
-		boolean[] result = new boolean[] { true };
-		try {
-			new ProgressMonitorDialog(shell).run(true, false,
-					monitor -> result[0] = pullAllProjects(projects, logger, monitor));
-		} catch (InvocationTargetException e) {
-			Throwable cause = e.getCause() != null ? e.getCause() : e;
-			logger.error(cause.getMessage(), cause);
-			result[0] = false;
-		} catch (InterruptedException e) {
-			logger.error(e.getMessage(), e);
-			Thread.currentThread().interrupt();
-			result[0] = false;
-		}
-
-		if (result[0]) {
-			MessageDialog.openInformation(shell, "Получить из хранилища",
-					"Операция успешно выполнена" + System.lineSeparator() + "Журнал: " + logger.getLogFile());
-		} else {
-			MessageDialog.openError(shell, "Получить из хранилища",
-					"Операция не выполнена. Журнал: " + logger.getLogFile());
-		}
+		OperationLogDialog dialog = new OperationLogDialog(shell, "Получить из хранилища", logger,
+				monitor -> pullAllProjects(projects, logger, monitor));
+		dialog.open();
 
 		return null;
 	}
@@ -162,14 +144,11 @@ public class ImportHandler implements IHandler {
 	private void pullProject(IProject project, OperationLogger logger, IProgressMonitor monitor)
 			throws IOException, CoreException, RuntimeExecutionException, InterruptedException, InvocationTargetException {
 		Path rootDirectory = FileUtil.createTempDirectory("ZigrPull").toPath();
-		Path exportDirectory = FileUtil.createTempDirectory("StorageDump", rootDirectory).toPath();
-		Path importDirectory = FileUtil.createTempDirectory("StorageImport", rootDirectory).toPath();
+		Path exportDirectory = null;
 		Designer designer = null;
 		boolean success = false;
 		try {
 			logger.detail("Временный каталог: " + rootDirectory);
-			logger.detail("Каталог XML-выгрузки: " + exportDirectory);
-			logger.detail("Каталог XML-импорта EDT: " + importDirectory);
 			designer = new Designer(issueDescriptor, project.getName(), rootDirectory);
 			logger.detail("EDT-проект: " + designer.getProject().getName());
 			logger.detail("Цель хранилища: " + designer.getStorageTargetDescription());
@@ -184,45 +163,35 @@ public class ImportHandler implements IHandler {
 			logger.step("Получение последней версии из хранилища в ИБ");
 			monitor.subTask("Получение последней версии из хранилища");
 			List<String> updatedObjects = designer.updateConfigurationFromRepository(logger);
+			logger.detail("Объектов, указанных хранилищем как измененные: " + updatedObjects.size());
 			if (!updatedObjects.isEmpty()) {
 				savePendingObjects(project, updatedObjects, logger);
 			}
-
-			logger.step("Выгрузка конфигурации ИБ в XML");
-			monitor.subTask("Выгрузка конфигурации ИБ в XML");
-			designer.dumpConfigurationToXml(exportDirectory, logger);
-			logDumpSummary(exportDirectory, logger);
-
-			List<String> objectsForImport = new ArrayList<String>(updatedObjects);
-			if (objectsForImport.isEmpty()) {
-				logger.step("Поиск незавершенного списка объектов для EDT-импорта");
-				objectsForImport = loadPendingObjects(project, logger);
-				if (objectsForImport.isEmpty()) {
-					objectsForImport = loadRecentUpdatedObjectsFromLogs(project, logger);
-					if (!objectsForImport.isEmpty()) {
-						savePendingObjects(project, objectsForImport, logger);
-					}
-				}
-				if (objectsForImport.isEmpty()) {
-					logger.step("Отличий для EDT-импорта не найдено");
-					logger.detail("Импорт в EDT пропущен: хранилище не вернуло новых объектов, незавершенный список объектов не найден");
-					success = true;
-					return;
-				}
+			List<String> expectedObjects = new ArrayList<String>(updatedObjects);
+			if (expectedObjects.isEmpty()) {
+				logger.step("Поиск незавершенного списка объектов для контроля EDT-импорта");
+				expectedObjects = loadPendingObjects(project, logger);
 			}
 
-			logger.step("Подготовка XML для частичного импорта в EDT");
-			monitor.subTask("Подготовка XML для частичного импорта");
-			preparePartialImportDirectory(exportDirectory, importDirectory, objectsForImport, logger);
-			logDumpSummary(importDirectory, logger);
+			logger.step("Обновление конфигурации базы данных");
+			monitor.subTask("Обновление конфигурации базы данных");
+			designer.updateDatabaseConfiguration(logger);
 
-			logger.step("Импорт XML в EDT-проект");
-			monitor.subTask("Импорт XML в EDT-проект");
-			importXmlToProject(designer.getProject(), designer.getVersion(), importDirectory, logger);
-
-			logger.step("Обновление состояния синхронизации EDT");
-			monitor.subTask("Обновление состояния синхронизации EDT");
-			designer.updateProjectSynchronizationState(exportDirectory, logger);
+			logger.step("Получение изменений из ИБ в EDT штатным механизмом");
+			monitor.subTask("Получение изменений из ИБ в EDT");
+			InfobaseChangesResolutionResult syncResult = designer.retrieveConfigurationChangesFromInfobase(logger, monitor);
+			if (syncResult == InfobaseChangesResolutionResult.NO_CHANGES && !expectedObjects.isEmpty()) {
+				logger.step("Полный XML-импорт из ИБ в EDT");
+				logger.detail("EDT вернула NO_CHANGES, но есть ожидаемые объекты из хранилища: "
+						+ expectedObjects.size());
+				monitor.subTask("Полный XML-импорт из ИБ в EDT");
+				exportDirectory = FileUtil.createTempDirectory("StorageDump", rootDirectory).toPath();
+				logger.detail("Каталог XML-выгрузки fallback: " + exportDirectory);
+				designer.dumpConfigurationToXml(exportDirectory, logger);
+				logDumpSummary(exportDirectory, logger);
+				importXmlToProject(designer.getProject(), designer.getVersion(), exportDirectory, logger);
+				designer.updateProjectSynchronizationState(exportDirectory, logger);
+			}
 			clearPendingObjects(project, logger);
 			success = true;
 		} finally {
@@ -238,8 +207,9 @@ public class ImportHandler implements IHandler {
 				}
 			} else {
 				logger.detail("Временный каталог сохранен для диагностики: " + rootDirectory);
-				logger.detail("XML-выгрузка сохранена для диагностики: " + exportDirectory);
-				logger.detail("XML-импорт EDT сохранен для диагностики: " + importDirectory);
+				if (exportDirectory != null) {
+					logger.detail("XML-выгрузка fallback сохранена для диагностики: " + exportDirectory);
+				}
 			}
 		}
 	}
@@ -509,30 +479,66 @@ public class ImportHandler implements IHandler {
 
 		String objectType = objectName.substring(0, delimiter);
 		String objectPath = objectName.substring(delimiter + 1);
-		Path relativeObjectPath = getObjectDumpPath(objectType, objectPath);
-		if (relativeObjectPath == null) {
+		List<Path> relativeObjectPaths = getObjectDumpPaths(objectType, objectPath);
+		if (relativeObjectPaths.isEmpty()) {
 			logger.detail("Неизвестный тип объекта хранилища: " + objectName);
 			return false;
 		}
 
-		boolean copied = false;
-		copied |= copyFileIfExists(exportDirectory.resolve(relativeObjectPath + ".xml"),
-				importDirectory.resolve(relativeObjectPath + ".xml"), logger);
-		copied |= copyDirectoryIfExists(exportDirectory.resolve(relativeObjectPath), importDirectory.resolve(relativeObjectPath),
-				logger);
-		if (!copied) {
+		for (Path relativeObjectPath : relativeObjectPaths) {
+			boolean copied = false;
+			copied |= copyFileIfExists(exportDirectory.resolve(relativeObjectPath + ".xml"),
+					importDirectory.resolve(relativeObjectPath + ".xml"), logger);
+			copied |= copyDirectoryIfExists(exportDirectory.resolve(relativeObjectPath), importDirectory.resolve(relativeObjectPath),
+					logger);
+			if (copied) {
+				return true;
+			}
 			logger.detail("В XML-выгрузке не найден объект хранилища: " + objectName + ", путь=" + relativeObjectPath);
-			return false;
 		}
-		return true;
+		return false;
 	}
 
-	private Path getObjectDumpPath(String objectType, String objectPath) {
+	private List<Path> getObjectDumpPaths(String objectType, String objectPath) {
 		String rootDirectoryName = getObjectRootDirectoryName(objectType);
 		if (rootDirectoryName == null) {
-			return null;
+			return new ArrayList<Path>();
 		}
-		return Path.of(rootDirectoryName).resolve(objectPath.replace('.', java.io.File.separatorChar));
+		List<Path> result = new ArrayList<Path>();
+		Path normalizedPath = Path.of(rootDirectoryName).resolve(normalizeRepositoryObjectPath(objectPath));
+		result.add(normalizedPath);
+
+		Path legacyPath = Path.of(rootDirectoryName).resolve(objectPath.replace('.', java.io.File.separatorChar));
+		if (!legacyPath.equals(normalizedPath)) {
+			result.add(legacyPath);
+		}
+		return result;
+	}
+
+	private Path normalizeRepositoryObjectPath(String objectPath) {
+		String[] segments = objectPath.split("\\.");
+		Path result = Path.of("");
+		for (int i = 0; i < segments.length; i++) {
+			String segment = segments[i];
+			if (i > 0 && i % 2 == 1) {
+				segment = getChildObjectDirectoryName(segment);
+			}
+			result = result.resolve(segment);
+		}
+		return result;
+	}
+
+	private String getChildObjectDirectoryName(String childObjectType) {
+		return switch (childObjectType) {
+		case "Attribute" -> "Attributes";
+		case "Command" -> "Commands";
+		case "Dimension" -> "Dimensions";
+		case "Form" -> "Forms";
+		case "Resource" -> "Resources";
+		case "TabularSection" -> "TabularSections";
+		case "Template" -> "Templates";
+		default -> childObjectType;
+		};
 	}
 
 	private String getObjectRootDirectoryName(String objectType) {

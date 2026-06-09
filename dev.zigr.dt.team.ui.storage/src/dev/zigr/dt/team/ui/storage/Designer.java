@@ -15,9 +15,17 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.emf.ecore.EObject;
 import org.eclipse.xtext.naming.QualifiedName;
 
 import com._1c.g5.v8.dt.core.platform.IExtensionProject;
@@ -26,6 +34,19 @@ import com._1c.g5.v8.dt.core.platform.IV8ProjectManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.IInfobaseAccessManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.IInfobaseAccessSettings;
 import com._1c.g5.v8.dt.platform.services.core.infobases.InfobaseAccessType;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseChangesResolver;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseConfigurationChange;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseSynchronizationManager;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseUpdateConflictResolver;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.IInfobaseUpdateConflictResolver.IConflictResolveAssist;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseConflictResolution;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseConflictResolutionResult;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseSyncResolution;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseSynchronizationException;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.ObjectChange;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.ObjectChangeType;
+import com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2.IInfobaseSynchronizationFlow;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2.IInfobaseSynchronizationStateManager;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.v2.IUpdateProjectFlow;
 import com._1c.g5.v8.dt.platform.services.core.runtimes.RuntimeInstallations;
@@ -55,6 +76,8 @@ public class Designer {
 			ServiceAccess.supplier(IV8ProjectManager.class, StorageUiPlugin.getDefault());	
 	private ServiceSupplier<IResolvableRuntimeInstallationManager> resolvableRuntimeInstallationManagerSupplier = 
 			ServiceAccess.supplier(IResolvableRuntimeInstallationManager.class, StorageUiPlugin.getDefault());	
+	private ServiceSupplier<IInfobaseSynchronizationManager> infobaseSynchronizationManagerSupplier = 
+			ServiceAccess.supplier(IInfobaseSynchronizationManager.class, StorageUiPlugin.getDefault());	
 	private ServiceSupplier<IInfobaseSynchronizationStateManager> infobaseSynchronizationStateManagerSupplier = 
 			ServiceAccess.supplier(IInfobaseSynchronizationStateManager.class, StorageUiPlugin.getDefault());	
 	
@@ -100,12 +123,17 @@ public class Designer {
 	private IInfobaseSynchronizationStateManager getInfobaseSynchronizationStateManager() {
 		return infobaseSynchronizationStateManagerSupplier.get();
 	}
+
+	private IInfobaseSynchronizationManager getInfobaseSynchronizationManager() {
+		return infobaseSynchronizationManagerSupplier.get();
+	}
 	
 	public void dispose() {
 		infobaseAccessManagerSupplier.close();
 		runtimeComponentManagerSupplier.close();
 		v8ProjectManagerSupplier.close();
 		resolvableRuntimeInstallationManagerSupplier.close();
+		infobaseSynchronizationManagerSupplier.close();
 		infobaseSynchronizationStateManagerSupplier.close();
 	}
 	
@@ -156,9 +184,7 @@ public class Designer {
 		command.additionalParameters(getRepositoryConnectionParameters());
 		logCommandContext(logger, "Загрузка XML в конфигурацию", getRepositoryConnectionParameters());
 		
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Загрузка XML в конфигурацию", log, returnCode);
+		int returnCode = runCommand("Загрузка XML в конфигурацию", command, log, logger);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -179,9 +205,7 @@ public class Designer {
 		command.additionalParameters(additionalStartupParameters);
 		logCommandContext(logger, "Помещение изменений в хранилище", additionalStartupParameters);
 
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Помещение изменений в хранилище", log, returnCode);
+		int returnCode = runCommand("Помещение изменений в хранилище", command, log, logger);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -200,9 +224,7 @@ public class Designer {
 		command.additionalParameters(additionalStartupParameters);
 		logCommandContext(logger, "Получение конфигурации из хранилища", additionalStartupParameters);
 
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Получение конфигурации из хранилища", log, returnCode);
+		int returnCode = runCommand("Получение конфигурации из хранилища", command, log, logger);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -213,6 +235,24 @@ public class Designer {
 			logger.detail("Из хранилища получен объект: " + objectName);
 		}
 		return updatedObjects;
+	}
+
+	public void updateDatabaseConfiguration(OperationLogger logger)
+			throws CoreException, IOException, InterruptedException {
+		Path log = rootDirectory.resolve("updateDbCfgOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+		String additionalStartupParameters = "/UpdateDBCfg -Dynamic+";
+		if (!extensionName.isEmpty()) {
+			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
+		}
+		command.additionalParameters(additionalStartupParameters);
+		logCommandContext(logger, "Обновление конфигурации базы данных", additionalStartupParameters);
+
+		int returnCode = runCommand("Обновление конфигурации базы данных", command, log, logger);
+		if (returnCode != 0) {
+			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
+			throw new CoreException(status);
+		}
 	}
 
 	private List<String> readUpdatedRepositoryObjects(Path log) throws IOException {
@@ -242,9 +282,7 @@ public class Designer {
 		}
 		logCommandContext(logger, "Выгрузка конфигурации в XML", exportParameters);
 
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Выгрузка конфигурации в XML", log, returnCode);
+		int returnCode = runCommand("Выгрузка конфигурации в XML", command, log, logger);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -271,6 +309,184 @@ public class Designer {
 			}
 			IStatus status = StorageUiPlugin.createErrorStatus("Не удалось обновить состояние синхронизации проекта после операции с хранилищем", e);
 			throw new CoreException(status);
+		}
+	}
+
+	public InfobaseChangesResolutionResult retrieveConfigurationChangesFromInfobase(OperationLogger logger, IProgressMonitor monitor)
+			throws CoreException {
+		IProgressMonitor actualMonitor = monitor != null ? monitor : new NullProgressMonitor();
+		logger.detail("Штатное получение изменений из ИБ в EDT-проект");
+		logger.detail("EDT-проект: " + project.getName());
+		logger.detail("ИБ: " + issueDescriptor.getInfobase().getName());
+		logger.detail("Сервис синхронизации EDT: " + getInfobaseSynchronizationManager().getClass().getName());
+
+		InfobaseSyncResolution resolution = getInfobaseSynchronizationManager().retrieveInfobaseChanges(
+				project,
+				issueDescriptor.getInfobase(),
+				new PullChangesResolver(logger),
+				true,
+				actualMonitor);
+		logInfobaseSyncResolution(resolution, logger);
+		IStatus asyncConflictStatus = waitForConflictResolution(resolution, logger);
+		ensureInfobaseSyncResolved(resolution, asyncConflictStatus, logger);
+		project.refreshLocal(IResource.DEPTH_INFINITE, new NullProgressMonitor());
+		logger.detail("EDT-проект обновлен из ИБ штатным механизмом");
+		return resolution.getInfobaseChangesResolutionResult();
+	}
+
+	private IStatus waitForConflictResolution(InfobaseSyncResolution resolution, OperationLogger logger) throws CoreException {
+		if (resolution == null || resolution.getConflictResolution() == null) {
+			return null;
+		}
+		CompletableFuture<IStatus> conflictResolution = resolution.getConflictResolution();
+		try {
+			IStatus status = conflictResolution.get();
+			logStatus("Результат асинхронного разрешения конфликтов EDT", status, logger);
+			if (status != null && status.matches(IStatus.ERROR | IStatus.CANCEL)) {
+				throw new CoreException(status);
+			}
+			return status;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"Получение изменений из ИБ в EDT прервано во время ожидания разрешения конфликтов", e));
+		} catch (ExecutionException e) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"Ошибка при асинхронном разрешении конфликтов EDT", e.getCause() != null ? e.getCause() : e));
+		}
+	}
+
+	private void ensureInfobaseSyncResolved(InfobaseSyncResolution resolution, IStatus asyncConflictStatus,
+			OperationLogger logger) throws CoreException {
+		if (resolution == null) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"EDT не вернула результат получения изменений из ИБ"));
+		}
+		InfobaseChangesResolutionResult result = resolution.getInfobaseChangesResolutionResult();
+		if (resolution.isFinished()
+				&& (result == InfobaseChangesResolutionResult.NO_CHANGES
+						|| result == InfobaseChangesResolutionResult.CHANGES_RESOLVED)) {
+			return;
+		}
+		if (resolution.isFinished()
+				&& result == InfobaseChangesResolutionResult.CHANGES_NOT_RESOLVED
+				&& asyncConflictStatus != null
+				&& !asyncConflictStatus.matches(IStatus.ERROR | IStatus.CANCEL)) {
+			logger.detail("EDT вернула CHANGES_NOT_RESOLVED, но отложенное разрешение завершилось успешно; считаем импорт выполненным");
+			return;
+		}
+		throw new CoreException(StorageUiPlugin.createErrorStatus(
+				"EDT не смогла применить изменения из ИБ. result=" + result + ", finished=" + resolution.isFinished()));
+	}
+
+	private void logInfobaseSyncResolution(InfobaseSyncResolution resolution, OperationLogger logger) {
+		if (resolution == null) {
+			logger.detail("Результат штатного получения из ИБ: null");
+			return;
+		}
+		logger.detail("Результат штатного получения из ИБ: result="
+				+ resolution.getInfobaseChangesResolutionResult()
+				+ ", finished=" + resolution.isFinished()
+				+ ", hasAsyncConflictResolution=" + (resolution.getConflictResolution() != null));
+	}
+
+	private void logStatus(String title, IStatus status, OperationLogger logger) {
+		if (status == null) {
+			logger.detail(title + ": статус не возвращен");
+			return;
+		}
+		logger.detail(title + ": severity=" + status.getSeverity() + ", message=" + status.getMessage());
+		for (IStatus child : status.getChildren()) {
+			logger.detail(title + " / child: severity=" + child.getSeverity() + ", message=" + child.getMessage());
+		}
+	}
+
+	private final class PullChangesResolver implements IInfobaseChangesResolver {
+
+		private static final int MAX_LOGGED_OBJECT_CHANGES = 100;
+
+		private final OperationLogger logger;
+
+		private PullChangesResolver(OperationLogger logger) {
+			this.logger = logger;
+		}
+
+		@Override
+		public InfobaseConflictResolution resolveInfobaseChanges(IProject syncProject, InfobaseReference infobase,
+				Set<EObject> projectNewObjects, Set<EObject> projectModifiedObjects, Set<String> projectDeletedObjects,
+				IInfobaseConfigurationChange infobaseChanges, IInfobaseUpdateConflictResolver conflictResolver,
+				IConflictResolveAssist conflictResolveAssist, IInfobaseSynchronizationFlow synchronizationFlow,
+				IProgressMonitor monitor) throws InfobaseSynchronizationException {
+			logProjectChanges(projectNewObjects, projectModifiedObjects, projectDeletedObjects);
+			logInfobaseChanges(infobaseChanges);
+			if (infobaseChanges == null || infobaseChanges.isEmpty()) {
+				logger.detail("EDT не обнаружила входящих изменений ИБ");
+				return new InfobaseConflictResolution(InfobaseConflictResolutionResult.OVERRIDDEN);
+			}
+			InfobaseConflictResolution resolution = conflictResolver.resolveConflict(syncProject, infobase,
+					projectNewObjects, projectModifiedObjects, projectDeletedObjects, infobaseChanges,
+					conflictResolveAssist, synchronizationFlow, monitor);
+			logger.detail("Результат разрешения изменений ИБ: " + describeConflictResolution(resolution));
+			return resolution;
+		}
+
+		private void logProjectChanges(Set<EObject> projectNewObjects, Set<EObject> projectModifiedObjects,
+				Set<String> projectDeletedObjects) {
+			logger.detail("Локальные изменения EDT перед импортом из ИБ: new=" + size(projectNewObjects)
+					+ ", modified=" + size(projectModifiedObjects)
+					+ ", deleted=" + size(projectDeletedObjects));
+		}
+
+		private void logInfobaseChanges(IInfobaseConfigurationChange infobaseChanges) {
+			if (infobaseChanges == null) {
+				logger.detail("EDT вернула пустое описание изменений ИБ");
+				return;
+			}
+			Set<ObjectChange> objectChanges = infobaseChanges.getObjectChanges();
+			logger.detail("Входящие изменения ИБ: objects=" + size(objectChanges)
+					+ ", fullReloadRequired=" + infobaseChanges.isFullReloadRequired()
+					+ ", new=" + countChanges(objectChanges, ObjectChangeType.NEW)
+					+ ", modified=" + countChanges(objectChanges, ObjectChangeType.MODIFIED)
+					+ ", deleted=" + countChanges(objectChanges, ObjectChangeType.DELETED));
+			if (objectChanges == null) {
+				return;
+			}
+			int logged = 0;
+			for (ObjectChange change : objectChanges) {
+				if (logged >= MAX_LOGGED_OBJECT_CHANGES) {
+					logger.detail("Входящие изменения ИБ: ... еще "
+							+ (objectChanges.size() - MAX_LOGGED_OBJECT_CHANGES));
+					break;
+				}
+				logger.detail("Входящее изменение ИБ: " + change.getType() + " "
+						+ change.getPlatformQualifiedName());
+				logged++;
+			}
+		}
+
+		private int countChanges(Set<ObjectChange> changes, ObjectChangeType type) {
+			if (changes == null) {
+				return 0;
+			}
+			int result = 0;
+			for (ObjectChange change : changes) {
+				if (change.getType() == type) {
+					result++;
+				}
+			}
+			return result;
+		}
+
+		private int size(Set<?> values) {
+			return values == null ? 0 : values.size();
+		}
+
+		private String describeConflictResolution(InfobaseConflictResolution resolution) {
+			if (resolution == null) {
+				return "null";
+			}
+			return "result=" + resolution.getResolutionResult()
+					+ ", hasAsyncStatus=" + (resolution.getConflictResolution() != null);
 		}
 	}
 
@@ -332,17 +548,15 @@ public class Designer {
 			command.additionalParameters(MessageFormat.format(additionalStartupParameters, ""));
 		}
 		
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Захват объектов в хранилище", log, returnCode);
+		logCommandContext(logger, "Захват объектов в хранилище", commandParametersForLock(additionalStartupParameters));
+		int returnCode = runCommand("Захват объектов в хранилище", command, log, logger);
 		if (returnCode != 0) {
 			if (!extensionName.isEmpty()) { // имя расширения могло быть переименовано в EDT
 				Path logListExtNames = rootDirectory.resolve("listExtNamesOut.txt");
 				command = getCommandBuilder(logListExtNames);
 				command.listConfigurationExtensions();
-				process = command.start();
-				returnCode = process.waitFor();
-				logger.commandResult("Получение списка расширений ИБ", logListExtNames, returnCode);
+				logCommandContext(logger, "Получение списка расширений ИБ", "ListConfigurationExtensions");
+				returnCode = runCommand("Получение списка расширений ИБ", command, logListExtNames, logger);
 				if (returnCode != 0) {
 					IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(logListExtNames));
 					throw new CoreException(status);
@@ -354,10 +568,10 @@ public class Designer {
 						while ((line = reader.readLine()) != null) {
 							Path logExtensionLockObjects = rootDirectory.resolve("extensionObjectsOut.txt");
 							command = getCommandBuilder(logExtensionLockObjects);
-							command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(line)));
-							process = command.start();
-							returnCode = process.waitFor();
-							logger.commandResult("Захват объектов в расширении " + line, logExtensionLockObjects, returnCode);
+							String extensionLockParameters = MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(line));
+							command.additionalParameters(extensionLockParameters);
+							logCommandContext(logger, "Захват объектов в расширении " + line, extensionLockParameters);
+							returnCode = runCommand("Захват объектов в расширении " + line, command, logExtensionLockObjects, logger);
 							if (returnCode == 0) {
 								extensionName = line;
 								extensionIsFound = true;
@@ -405,10 +619,10 @@ public class Designer {
 		}
 		
 		command.additionalParameters(getRepositoryConnectionParameters() + " " + additionalStartupParameters);
+		logCommandContext(logger, "Сравнение конфигурации с конфигурацией БД",
+				getRepositoryConnectionParameters() + " " + additionalStartupParameters);
 		
-		Process process = command.start();
-		int returnCode = process.waitFor();
-		logger.commandResult("Сравнение конфигурации с конфигурацией БД", log, returnCode);
+		int returnCode = runCommand("Сравнение конфигурации с конфигурацией БД", command, log, logger);
 		if (returnCode != 0) {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
@@ -465,9 +679,64 @@ public class Designer {
 			+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP " + quoteParameter(storageSettings.getPassword()));
 	}
 
+	private int runCommand(String title, RuntimeExecutionCommandBuilder command, Path log, OperationLogger logger)
+			throws IOException, InterruptedException {
+		logger.detail(title + ": запуск пакетной команды");
+		Process process = command.start();
+		logger.detail(title + ": процесс запущен, log=" + log);
+		int loggedLength = 0;
+		while (true) {
+			loggedLength = logNewCommandOutput(title, log, logger, loggedLength);
+			if (process.waitFor(500, TimeUnit.MILLISECONDS)) {
+				break;
+			}
+		}
+		logNewCommandOutput(title, log, logger, loggedLength);
+		int returnCode = process.exitValue();
+		logger.commandResult(title, log, returnCode, false);
+		return returnCode;
+	}
+
+	private int logNewCommandOutput(String title, Path log, OperationLogger logger, int loggedLength) throws IOException {
+		String output;
+		try {
+			if (!Files.exists(log)) {
+				return loggedLength;
+			}
+			output = Files.readString(log);
+		} catch (IOException e) {
+			return loggedLength;
+		}
+		if (output.length() < loggedLength) {
+			loggedLength = 0;
+		}
+		if (output.length() == loggedLength) {
+			return loggedLength;
+		}
+		if (loggedLength == 0) {
+			logger.detail(title + " output:");
+		}
+		String newOutput = output.substring(loggedLength);
+		for (String line : newOutput.split("\\R")) {
+			if (!line.isEmpty()) {
+				logger.detail("  " + line);
+			}
+		}
+		return output.length();
+	}
+
+	private String commandParametersForLock(String parametersTemplate) {
+		if (!extensionName.isEmpty()) {
+			return MessageFormat.format(parametersTemplate, " -Extension " + quoteParameter(extensionName));
+		}
+		return MessageFormat.format(parametersTemplate, "");
+	}
+
 	private void logCommandContext(OperationLogger logger, String title, String additionalParameters) {
 		logger.detail(title + ": проект=" + project.getName() + ", цель=" + getStorageTargetDescription());
-		logger.detail(title + ": параметры=" + maskSensitiveParameters(additionalParameters));
+		logger.detail(title + ": исполняемый файл=" + thickClient.getComponent().getFile());
+		logger.detail(title + ": ИБ=" + issueDescriptor.getInfobase().getName());
+		logger.detail(title + ": пакетная команда=DESIGNER " + maskSensitiveParameters(additionalParameters));
 	}
 
 	private String maskSensitiveParameters(String parameters) {
