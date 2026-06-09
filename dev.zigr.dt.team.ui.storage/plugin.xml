@@ -118,7 +118,7 @@
             name="Поместить в хранилище">
       </command>
       <command
-            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.ImportHandler"
+            defaultHandler="dev.zigr.dt.team.ui.storage.ImportHandler"
             id="dev.zigr.dt.team.ui.storage.command.import"
             name="Получить из хранилища">
       </command>

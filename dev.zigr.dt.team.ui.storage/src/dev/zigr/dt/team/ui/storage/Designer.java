@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.eclipse.core.resources.IProject;
@@ -115,6 +116,17 @@ public class Designer {
 	public IProject getProject() {
 		return project;
 	}
+
+	public String getStorageTargetDescription() {
+		if (extensionName == null || extensionName.isEmpty()) {
+			return "основная конфигурация";
+		}
+		return "расширение " + extensionName;
+	}
+
+	public String getResolvedExtensionName() {
+		return extensionName;
+	}
 	
 	public void closeDesignerSession() throws RuntimeExecutionException {
 		thickClient.getExecutor().closeDesignerSession(thickClient.getComponent(), issueDescriptor.getInfobase(), null);
@@ -142,6 +154,7 @@ public class Designer {
 			command.forExtension(extensionName);
 		}
 		command.additionalParameters(getRepositoryConnectionParameters());
+		logCommandContext(logger, "Загрузка XML в конфигурацию", getRepositoryConnectionParameters());
 		
 		Process process = command.start();
 		int returnCode = process.waitFor();
@@ -164,6 +177,7 @@ public class Designer {
 			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
 		}
 		command.additionalParameters(additionalStartupParameters);
+		logCommandContext(logger, "Помещение изменений в хранилище", additionalStartupParameters);
 
 		Process process = command.start();
 		int returnCode = process.waitFor();
@@ -174,7 +188,7 @@ public class Designer {
 		}
 	}
 
-	public void updateConfigurationFromRepository(OperationLogger logger)
+	public List<String> updateConfigurationFromRepository(OperationLogger logger)
 			throws CoreException, IOException, InterruptedException {
 		Path log = rootDirectory.resolve("updateCfgOut.txt");
 		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
@@ -184,6 +198,7 @@ public class Designer {
 			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
 		}
 		command.additionalParameters(additionalStartupParameters);
+		logCommandContext(logger, "Получение конфигурации из хранилища", additionalStartupParameters);
 
 		Process process = command.start();
 		int returnCode = process.waitFor();
@@ -192,6 +207,25 @@ public class Designer {
 			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
 			throw new CoreException(status);
 		}
+		List<String> updatedObjects = readUpdatedRepositoryObjects(log);
+		logger.detail("Из хранилища получено объектов: " + updatedObjects.size());
+		for (String objectName : updatedObjects) {
+			logger.detail("Из хранилища получен объект: " + objectName);
+		}
+		return updatedObjects;
+	}
+
+	private List<String> readUpdatedRepositoryObjects(Path log) throws IOException {
+		List<String> result = new ArrayList<String>();
+		String marker = "Объект получен из хранилища:";
+		for (String rawLine : Files.readString(log).split("\\R")) {
+			String line = rawLine.replace("\uFEFF", "").trim();
+			int markerIndex = line.indexOf(marker);
+			if (markerIndex >= 0) {
+				result.add(line.substring(markerIndex + marker.length()).trim());
+			}
+		}
+		return result;
 	}
 
 	public void dumpConfigurationToXml(Path exportDirectory, OperationLogger logger)
@@ -202,6 +236,11 @@ public class Designer {
 		if (!extensionName.isEmpty()) {
 			command.forExtension(extensionName);
 		}
+		String exportParameters = "ExportXmlFromInfobase " + quoteParameter(exportDirectory.toString());
+		if (!extensionName.isEmpty()) {
+			exportParameters = exportParameters + " -Extension " + quoteParameter(extensionName);
+		}
+		logCommandContext(logger, "Выгрузка конфигурации в XML", exportParameters);
 
 		Process process = command.start();
 		int returnCode = process.waitFor();
@@ -424,6 +463,15 @@ public class Designer {
 		return "/ConfigurationRepositoryF " + quoteParameter(storageSettings.getAddress())
 			+ " /ConfigurationRepositoryN " + quoteParameter(storageSettings.getUser())
 			+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP " + quoteParameter(storageSettings.getPassword()));
+	}
+
+	private void logCommandContext(OperationLogger logger, String title, String additionalParameters) {
+		logger.detail(title + ": проект=" + project.getName() + ", цель=" + getStorageTargetDescription());
+		logger.detail(title + ": параметры=" + maskSensitiveParameters(additionalParameters));
+	}
+
+	private String maskSensitiveParameters(String parameters) {
+		return parameters.replaceAll("(?i)(/ConfigurationRepositoryP\\s+)\"[^\"]*\"", "$1\"******\"");
 	}
 
 	private String quoteParameter(String value) {

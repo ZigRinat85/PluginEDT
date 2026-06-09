@@ -1,6 +1,8 @@
 package dev.zigr.dt.team.ui.storage;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,6 +63,13 @@ public class OperationLogger {
 
 	public void error(String message, Throwable throwable) {
 		write("ERROR " + message);
+		if (throwable != null) {
+			StringWriter stackTrace = new StringWriter();
+			throwable.printStackTrace(new PrintWriter(stackTrace));
+			for (String line : stackTrace.toString().split("\\R")) {
+				write("ERROR   " + line);
+			}
+		}
 		StorageUiPlugin.logError(message, throwable);
 	}
 

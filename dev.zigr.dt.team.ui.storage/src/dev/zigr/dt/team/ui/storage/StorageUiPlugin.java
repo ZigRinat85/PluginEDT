@@ -2,15 +2,9 @@ package dev.zigr.dt.team.ui.storage;
 
 import com._1c.g5.v8.dt.export.ExportRuntimeModule;
 
-import java.lang.reflect.Constructor;
-import java.util.ArrayList;
-import java.util.List;
-
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
-import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 
 import com.google.inject.Guice;
@@ -67,26 +61,13 @@ public class StorageUiPlugin extends AbstractUIPlugin {
 	{
 		try
 		{
-			List<Module> modules = new ArrayList<Module>();
-			modules.add(new ExternalDependenciesModule(this));
-			modules.add(new ExportRuntimeModule());
-			modules.add(createImportRuntimeModule());
-			return Guice.createInjector(modules);
+			return Guice.createInjector(
+					new Module[]{new ExternalDependenciesModule(this), new ExportRuntimeModule()});
 		}
 		catch (Exception e)
 		{
 			throw new RuntimeException("Failed to create injector for " + getBundle().getSymbolicName(), e);
 		}
-	}
-
-	private Module createImportRuntimeModule() throws Exception {
-		Bundle importBundle = Platform.getBundle("com._1c.g5.v8.dt.import");
-		if (importBundle == null) {
-			throw new IllegalStateException("Bundle com._1c.g5.v8.dt.import is not found");
-		}
-		Class<?> moduleClass = importBundle.loadClass("com._1c.g5.v8.dt.internal.import_.ImportRuntimeModule");
-		Constructor<?> constructor = moduleClass.getConstructor(org.eclipse.core.runtime.Plugin.class);
-		return (Module) constructor.newInstance(this);
 	}
 
 	public static void log(IStatus status) {
