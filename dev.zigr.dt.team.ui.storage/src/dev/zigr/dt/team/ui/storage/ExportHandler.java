@@ -124,6 +124,7 @@ public class ExportHandler implements IHandler {
 
 	private boolean pushAllDiff(Map<String, List<DiffEntry>> allDiff, OperationLogger logger, IProgressMonitor monitor) {
 		boolean result = true;
+		boolean processedProject = false;
 		monitor.beginTask("Помещение изменений в хранилище", IProgressMonitor.UNKNOWN);
 		for (Map.Entry<String, List<DiffEntry>> entry : allDiff.entrySet()) {
 			
@@ -131,6 +132,11 @@ public class ExportHandler implements IHandler {
 			List<DiffEntry> diff = entry.getValue();
 			storageSettings = new Settings(projectName);
 			logger.step("Обработка проекта " + projectName);
+			if (storageSettings.getAddress().isBlank()) {
+				logger.detail("Проект пропущен, адрес хранилища не заполнен: " + projectName);
+				continue;
+			}
+			processedProject = true;
 			monitor.subTask("Проект " + projectName + ": подготовка временного каталога");
 			
 			// rootDirectory
@@ -172,6 +178,10 @@ public class ExportHandler implements IHandler {
 			}
 		}
 		monitor.done();
+		if (!processedProject) {
+			logger.detail("Среди изменений Git не найдено проектов с заполненным адресом хранилища");
+			return false;
+		}
 		return result;
 	}
 
