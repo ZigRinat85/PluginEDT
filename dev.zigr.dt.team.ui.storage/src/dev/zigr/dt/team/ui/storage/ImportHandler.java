@@ -188,6 +188,8 @@ public class ImportHandler implements IHandler {
 					logger.detail("EDT вернула NO_CHANGES, но есть ожидаемые объекты из хранилища: "
 							+ expectedObjects.size());
 				}
+				logger.detail("Закрытие сессии конфигуратора, открытой штатным механизмом EDT, перед XML-выгрузкой");
+				designer.closeDesignerSession();
 				monitor.subTask("Полный XML-импорт из ИБ в EDT");
 				exportDirectory = FileUtil.createTempDirectory("StorageDump", rootDirectory).toPath();
 				logger.detail("Каталог XML-выгрузки fallback: " + exportDirectory);
