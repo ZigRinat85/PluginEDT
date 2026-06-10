@@ -160,6 +160,31 @@ public class Designer {
 		thickClient.getExecutor().closeDesignerSession(thickClient.getComponent(), issueDescriptor.getInfobase(), null);
 	}
 
+	public List<String> connectToRepository(OperationLogger logger)
+			throws CoreException, IOException, InterruptedException {
+		Path log = rootDirectory.resolve("bindCfgOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+		String additionalStartupParameters = getRepositoryConnectionParameters()
+			+ " /ConfigurationRepositoryBindCfg -forceBindAlreadyBindedUser -forceReplaceCfg";
+		if (!extensionName.isEmpty()) {
+			additionalStartupParameters = additionalStartupParameters + " -Extension " + quoteParameter(extensionName);
+		}
+		command.additionalParameters(additionalStartupParameters);
+		logCommandContext(logger, "Подключение конфигурации к хранилищу", additionalStartupParameters);
+
+		int returnCode = runCommand("Подключение конфигурации к хранилищу", command, log, logger);
+		if (returnCode != 0) {
+			IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
+			throw new CoreException(status);
+		}
+		List<String> updatedObjects = readUpdatedRepositoryObjects(log);
+		logger.detail("При подключении из хранилища получено объектов: " + updatedObjects.size());
+		for (String objectName : updatedObjects) {
+			logger.detail("При подключении из хранилища получен объект: " + objectName);
+		}
+		return updatedObjects;
+	}
+
 	private RuntimeExecutionCommandBuilder getCommandBuilder(Path log) throws CoreException {
 		InfobaseReference infobase = issueDescriptor.getInfobase();
 		IInfobaseAccessSettings settings = getInfobaseAccessManager().resolveSettings(infobase);
