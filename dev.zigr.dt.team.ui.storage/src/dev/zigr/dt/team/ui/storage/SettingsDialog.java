@@ -2,6 +2,7 @@ package dev.zigr.dt.team.ui.storage;
 
 import java.io.IOException;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.equinox.security.storage.StorageException;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.IDialogConstants;
@@ -17,18 +18,25 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.osgi.service.prefs.BackingStoreException;
 
+import com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor;
+
 public class SettingsDialog extends Dialog {
+	private IProject project;
+	private IGitBranchIssueDescriptor issueDescriptor;
 	private Settings storageSettings;
 	private Text txtAddress;
 	private Text txtUser;
 	private Text txtPassword;
+	private Text txtCommitCommentTemplate;
 	private Button btnExportMDWithMDO;
 	private Button btnPushIfConfigurationChanged;
 
-	protected SettingsDialog(Shell parentShell, String projectName) {
+	protected SettingsDialog(Shell parentShell, IProject project, IGitBranchIssueDescriptor issueDescriptor) {
 		super(parentShell);
-		
-		storageSettings = new Settings(projectName);
+
+		this.project = project;
+		this.issueDescriptor = issueDescriptor;
+		storageSettings = new Settings(project.getName());
 	}
 
 	@Override
@@ -59,6 +67,15 @@ public class SettingsDialog extends Dialog {
 		txtPassword = new Text(container, SWT.BORDER| SWT.PASSWORD);
 		txtPassword.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 		txtPassword.setText(storageSettings.getPassword());
+
+		Label lblConnect = new Label(container, SWT.NONE);
+		lblConnect.setText("");
+		Button btnConnect = new Button(container, SWT.PUSH);
+		btnConnect.setText("Подключиться");
+		btnConnect.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
+		btnConnect.setEnabled(project != null);
+		btnConnect.setToolTipText("Подключить связанную с проектом ИБ к хранилищу");
+		btnConnect.addListener(SWT.Selection, event -> connectPressed());
 		
 		// exportMDWithMDO
 		btnExportMDWithMDO = new Button(container, SWT.CHECK);
@@ -73,6 +90,21 @@ public class SettingsDialog extends Dialog {
 		btnPushIfConfigurationChanged.setSelection(storageSettings.getPushIfConfigurationChanged());
 		Label lblPushIfConfigurationChanged = new Label(container, SWT.NONE);
 		lblPushIfConfigurationChanged.setText("Помещать даже если конфигурации различаются");
+
+		// commitCommentTemplate
+		Label lblCommitCommentTemplate = new Label(container, SWT.NONE);
+		lblCommitCommentTemplate.setText("Шаблон комментария:");
+		txtCommitCommentTemplate = new Text(container, SWT.BORDER);
+		GridData commitCommentTemplateGridData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+		commitCommentTemplateGridData.widthHint = 620;
+		txtCommitCommentTemplate.setLayoutData(commitCommentTemplateGridData);
+		txtCommitCommentTemplate.setText(storageSettings.getCommitCommentTemplate());
+
+		Label lblCommitCommentTemplateHelp = new Label(container, SWT.WRAP);
+		lblCommitCommentTemplateHelp.setText("Доступные поля: {branch}, {storageBranch}, {project}, {changedFiles}, {fileCount}, {files}, {infobase}");
+		GridData commitCommentTemplateHelpGridData = new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1);
+		commitCommentTemplateHelpGridData.widthHint = 620;
+		lblCommitCommentTemplateHelp.setLayoutData(commitCommentTemplateHelpGridData);
 		
 		return container;
 	}
@@ -90,18 +122,34 @@ public class SettingsDialog extends Dialog {
 
 	@Override
 	protected void okPressed() {
+		if (saveSettings()) {
+			super.okPressed();
+		}
+	}
+
+	private void connectPressed() {
+		if (!saveSettings()) {
+			return;
+		}
+		if (StorageConnector.connect(getShell(), issueDescriptor, project)) {
+			super.okPressed();
+		}
+	}
+
+	private boolean saveSettings() {
 		try {
 			storageSettings.setAddress(txtAddress.getText());
 			storageSettings.setUser(txtUser.getText());
 			storageSettings.setPassword(txtPassword.getText());
 			storageSettings.setExportMDWithMDO(btnExportMDWithMDO.getSelection());
 			storageSettings.setPushIfConfigurationChanged(btnPushIfConfigurationChanged.getSelection());
+			storageSettings.setCommitCommentTemplate(txtCommitCommentTemplate.getText());
 			storageSettings.flush();
-			
-			super.okPressed();
+			return true;
 		} catch (StorageException | BackingStoreException | IOException e) {
 			StorageUiPlugin.logError(e.getMessage(), e);
 			MessageDialog.openError(getShell(), "Ошибка", "Не удалось записать настройки");
+			return false;
 		}
 	}
 }
