@@ -15,6 +15,26 @@
                id="dev.zigr.dt.team.ui.storage.menu1"
                label="Хранилище конфигурации">
             <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+                  id="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
                   commandId="dev.zigr.dt.team.ui.storage.command.export"
                   id="dev.zigr.dt.team.ui.storage.command.export"
                   style="push">
@@ -257,6 +277,11 @@
             defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.ExportHandler"
             id="dev.zigr.dt.team.ui.storage.command.export"
             name="Поместить в хранилище">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.LockUncommittedHandler"
+            id="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+            name="Захватить незакоммиченное">
       </command>
       <command
             defaultHandler="dev.zigr.dt.team.ui.storage.ImportHandler"
