@@ -12,6 +12,7 @@ import org.eclipse.swt.widgets.Shell;
 
 import com._1c.g5.v8.dt.common.FileUtil;
 import com._1c.g5.v8.dt.platform.services.core.infobases.sync.InfobaseChangesResolutionResult;
+import com._1c.g5.v8.dt.platform.services.model.InfobaseReference;
 import com._1c.g5.v8.dt.platform.services.core.runtimes.execution.RuntimeExecutionException;
 import com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor;
 
@@ -21,16 +22,19 @@ public final class StorageConnector {
 	}
 
 	public static boolean connect(Shell shell, IGitBranchIssueDescriptor issueDescriptor, IProject project) {
-		if (issueDescriptor == null) {
-			MessageDialog.openError(shell, "Подключить к хранилищу",
-					"Не удалось определить выбранную ИБ. Откройте настройки проекта из панели Разработка.");
-			return false;
-		}
 		if (project == null) {
 			MessageDialog.openError(shell, "Подключить к хранилищу", "Не удалось определить проект EDT");
 			return false;
 		}
-		if (!confirmConnect(shell, project)) {
+		InfobaseReference infobase;
+		try {
+			infobase = issueDescriptor != null ? issueDescriptor.getInfobase() : InfobaseResolver.getDefaultInfobase(project);
+		} catch (CoreException e) {
+			StorageUiPlugin.logError(e.getMessage(), e);
+			MessageDialog.openError(shell, "Подключить к хранилищу", e.getMessage());
+			return false;
+		}
+		if (!confirmConnect(shell, project, infobase)) {
 			return false;
 		}
 
@@ -44,25 +48,29 @@ public final class StorageConnector {
 		}
 
 		logger.step("Старт операции подключения к хранилищу");
-		logger.detail("ИБ: " + issueDescriptor.getInfobase().getName());
-		logger.detail("Ветка хранилища: " + issueDescriptor.getBranch().getName());
+		logger.detail("ИБ: " + infobase.getName());
+		if (issueDescriptor != null) {
+			logger.detail("Ветка хранилища: " + issueDescriptor.getBranch().getName());
+		}
 		logger.detail("Проект: " + project.getName());
 
 		OperationLogDialog dialog = new OperationLogDialog(shell, "Подключить к хранилищу", logger,
-				monitor -> connectProject(issueDescriptor, project, logger, monitor));
+				monitor -> connectProject(infobase, project, logger, monitor));
 		dialog.open();
 		return dialog.getResult();
 	}
 
-	private static boolean confirmConnect(Shell shell, IProject project) {
+	private static boolean confirmConnect(Shell shell, IProject project, InfobaseReference infobase) {
 		String message = "Подключить к хранилищу проект " + project.getName() + "?"
+				+ System.lineSeparator()
+				+ "ИБ: " + infobase.getName()
 				+ System.lineSeparator() + System.lineSeparator()
 				+ "Текущая конфигурация ИБ или расширения может быть заменена последней версией из хранилища. "
 				+ "Перед запуском проверьте адрес, логин и пароль хранилища.";
 		return MessageDialog.openQuestion(shell, "Подключить к хранилищу", message);
 	}
 
-	private static boolean connectProject(IGitBranchIssueDescriptor issueDescriptor, IProject project,
+	private static boolean connectProject(InfobaseReference infobase, IProject project,
 			OperationLogger logger, IProgressMonitor monitor)
 			throws IOException, CoreException, RuntimeExecutionException, InterruptedException {
 		Path rootDirectory = FileUtil.createTempDirectory("ZigrConnect").toPath();
@@ -70,7 +78,7 @@ public final class StorageConnector {
 		boolean success = false;
 		try {
 			logger.detail("Временный каталог: " + rootDirectory);
-			designer = new Designer(issueDescriptor, project.getName(), rootDirectory);
+			designer = new Designer(infobase, project.getName(), rootDirectory);
 			logger.detail("EDT-проект: " + designer.getProject().getName());
 			logger.detail("Цель хранилища: " + designer.getStorageTargetDescription());
 			if (!designer.getResolvedExtensionName().isEmpty()) {

@@ -71,7 +71,7 @@ public class ImportHandler implements IHandler {
 		logger.detail("Ветка хранилища: " + issueDescriptor.getBranch().getName());
 		logger.detail("Выбранный элемент: " + firstElement.getClass().getName());
 
-		List<IProject> projects = getConfiguredProjects(logger);
+		List<IProject> projects = StoragePullService.getConfiguredProjects(issueDescriptor, logger);
 		if (projects.isEmpty()) {
 			MessageDialog.openWarning(shell, "Получить из хранилища",
 					"Не найдены проекты текущего репозитория с заполненным адресом хранилища. Журнал: " + logger.getLogFile());
@@ -79,7 +79,7 @@ public class ImportHandler implements IHandler {
 		}
 
 		OperationLogDialog dialog = new OperationLogDialog(shell, "Получить из хранилища", logger,
-				monitor -> pullAllProjects(projects, logger, monitor));
+				monitor -> StoragePullService.pullAllProjects(issueDescriptor, projects, logger, monitor));
 		dialog.open();
 
 		return null;

@@ -73,10 +73,8 @@ public class SettingsDialog extends Dialog {
 		Button btnConnect = new Button(container, SWT.PUSH);
 		btnConnect.setText("Подключиться");
 		btnConnect.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
-		btnConnect.setEnabled(issueDescriptor != null);
-		if (issueDescriptor == null) {
-			btnConnect.setToolTipText("Откройте настройки проекта из панели Разработка, чтобы определить ИБ");
-		}
+		btnConnect.setEnabled(project != null);
+		btnConnect.setToolTipText("Подключить связанную с проектом ИБ к хранилищу");
 		btnConnect.addListener(SWT.Selection, event -> connectPressed());
 		
 		// exportMDWithMDO

@@ -81,7 +81,7 @@ public class Designer {
 	private ServiceSupplier<IInfobaseSynchronizationStateManager> infobaseSynchronizationStateManagerSupplier = 
 			ServiceAccess.supplier(IInfobaseSynchronizationStateManager.class, StorageUiPlugin.getDefault());	
 	
-	private IGitBranchIssueDescriptor issueDescriptor;
+	private InfobaseReference infobase;
 	private IProject project;
 	private Path rootDirectory;
 	private Version version;
@@ -89,11 +89,14 @@ public class Designer {
 	private String extensionName;
 	
 	public Designer(IGitBranchIssueDescriptor issueDescriptor, String projectName, Path rootDirectory) throws CoreException, IOException, InterruptedException, RuntimeExecutionException {
-		this.issueDescriptor = issueDescriptor;
+		this(issueDescriptor.getInfobase(), projectName, rootDirectory);
+	}
+
+	public Designer(InfobaseReference infobase, String projectName, Path rootDirectory) throws CoreException, IOException, InterruptedException, RuntimeExecutionException {
+		this.infobase = infobase;
 		this.project = getV8ProjectManager().getProject(projectName).getProject();
 		this.rootDirectory = rootDirectory;
 		
-		InfobaseReference infobase = issueDescriptor.getInfobase();
 		IResolvableRuntimeInstallation actualInstallation = getResolvableRuntimeInstallationManager().resolveByProjectAndInfobase(
 				RuntimeInstallations.ENTERPRISE_PLATFORM, project, infobase, InfobaseAccessType.UPDATE);
 		RuntimeInstallation installation = actualInstallation.resolve(List.of(IRuntimeComponentTypes.THICK_CLIENT), infobase.getAppArch());
@@ -157,7 +160,7 @@ public class Designer {
 	}
 	
 	public void closeDesignerSession() throws RuntimeExecutionException {
-		thickClient.getExecutor().closeDesignerSession(thickClient.getComponent(), issueDescriptor.getInfobase(), null);
+		thickClient.getExecutor().closeDesignerSession(thickClient.getComponent(), infobase, null);
 	}
 
 	public List<String> connectToRepository(OperationLogger logger)
@@ -186,7 +189,6 @@ public class Designer {
 	}
 
 	private RuntimeExecutionCommandBuilder getCommandBuilder(Path log) throws CoreException {
-		InfobaseReference infobase = issueDescriptor.getInfobase();
 		IInfobaseAccessSettings settings = getInfobaseAccessManager().resolveSettings(infobase);
 		File launchFile = thickClient.getComponent().getFile();
 		
@@ -319,7 +321,7 @@ public class Designer {
 		IUpdateProjectFlow updateProjectFlow = null;
 		try {
 			updateProjectFlow = getInfobaseSynchronizationStateManager().startUpdateProjectFlow(
-					getV8ProjectManager().getProject(project).getDtProject(), issueDescriptor.getInfobase());
+					getV8ProjectManager().getProject(project).getDtProject(), infobase);
 			updateActualConfigDumpInfo(updateProjectFlow, sourceFolder); // передаем именно каталог, где лежит файл ConfigDumpInfo.xml
 			// updateProjectFlow.setActualGenerationId(retrieveGenerationId()); для нас необязательно
 			updateProjectFlow.finish();
@@ -342,12 +344,12 @@ public class Designer {
 		IProgressMonitor actualMonitor = monitor != null ? monitor : new NullProgressMonitor();
 		logger.detail("Штатное получение изменений из ИБ в EDT-проект");
 		logger.detail("EDT-проект: " + project.getName());
-		logger.detail("ИБ: " + issueDescriptor.getInfobase().getName());
+		logger.detail("ИБ: " + infobase.getName());
 		logger.detail("Сервис синхронизации EDT: " + getInfobaseSynchronizationManager().getClass().getName());
 
 		InfobaseSyncResolution resolution = getInfobaseSynchronizationManager().retrieveInfobaseChanges(
 				project,
-				issueDescriptor.getInfobase(),
+				infobase,
 				new PullChangesResolver(logger),
 				true,
 				actualMonitor);
@@ -444,7 +446,7 @@ public class Designer {
 				IProgressMonitor monitor) throws InfobaseSynchronizationException {
 			logProjectChanges(projectNewObjects, projectModifiedObjects, projectDeletedObjects);
 			logInfobaseChanges(infobaseChanges);
-			if (infobaseChanges == null || infobaseChanges.isEmpty()) {
+			if (infobaseChanges == null || (!infobaseChanges.isFullReloadRequired() && infobaseChanges.isEmpty())) {
 				logger.detail("EDT не обнаружила входящих изменений ИБ");
 				return new InfobaseConflictResolution(InfobaseConflictResolutionResult.OVERRIDDEN);
 			}
@@ -465,6 +467,10 @@ public class Designer {
 		private void logInfobaseChanges(IInfobaseConfigurationChange infobaseChanges) {
 			if (infobaseChanges == null) {
 				logger.detail("EDT вернула пустое описание изменений ИБ");
+				return;
+			}
+			if (infobaseChanges.isFullReloadRequired()) {
+				logger.detail("Входящие изменения ИБ: fullReloadRequired=true, объектный список EDT не предоставляет");
 				return;
 			}
 			Set<ObjectChange> objectChanges = infobaseChanges.getObjectChanges();
@@ -760,7 +766,7 @@ public class Designer {
 	private void logCommandContext(OperationLogger logger, String title, String additionalParameters) {
 		logger.detail(title + ": проект=" + project.getName() + ", цель=" + getStorageTargetDescription());
 		logger.detail(title + ": исполняемый файл=" + thickClient.getComponent().getFile());
-		logger.detail(title + ": ИБ=" + issueDescriptor.getInfobase().getName());
+		logger.detail(title + ": ИБ=" + infobase.getName());
 		logger.detail(title + ": пакетная команда=DESIGNER " + maskSensitiveParameters(additionalParameters));
 	}
 
