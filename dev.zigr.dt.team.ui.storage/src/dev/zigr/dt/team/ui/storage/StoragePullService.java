@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import org.eclipse.core.resources.IProject;
@@ -55,7 +56,17 @@ final class StoragePullService {
 			result.add(project);
 		}
 
+		result.sort(Comparator.comparingInt(StoragePullService::getProjectPullOrder)
+				.thenComparing(IProject::getName));
 		return result;
+	}
+
+	private static int getProjectPullOrder(IProject project) {
+		try {
+			return project.hasNature("com._1c.g5.v8.dt.core.V8ExtensionNature") ? 1 : 0;
+		} catch (CoreException e) {
+			return 0;
+		}
 	}
 
 	static boolean pullAllProjects(IGitBranchIssueDescriptor issueDescriptor, List<IProject> projects,
@@ -114,6 +125,12 @@ final class StoragePullService {
 			if (expectedObjects.isEmpty()) {
 				logger.step("Поиск незавершенного списка объектов для контроля EDT-импорта");
 				expectedObjects = loadPendingObjects(issueDescriptor, project, logger);
+			}
+			if (expectedObjects.isEmpty()) {
+				logger.detail("Хранилище не вернуло измененных объектов, незавершенный EDT-импорт не найден; "
+						+ "обновление конфигурации БД и импорт из ИБ пропущены");
+				success = true;
+				return;
 			}
 
 			logger.step("Обновление конфигурации базы данных");

@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Configuration repository
 Bundle-SymbolicName: dev.zigr.dt.team.ui.storage;singleton:=true
-Bundle-Version: 0.4.0.qualifier
+Bundle-Version: 1.1.1.qualifier
 Import-Package: com._1c.g5.v8.activitytracking.core;version="1.0.0",
  com._1c.g5.v8.bm.core;version="9.1.0",
  com._1c.g5.v8.dt.common;version="6.10.100",

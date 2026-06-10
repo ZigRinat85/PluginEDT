@@ -128,6 +128,107 @@
                id="dev.zigr.dt.team.ui.storage.menu2"
                label="Хранилище конфигурации">
             <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
                   commandId="dev.zigr.dt.team.ui.storage.command.settings"
                   id="dev.zigr.dt.team.ui.storage.command.settings2"
                   style="push">
@@ -177,6 +278,50 @@
             id="dev.zigr.dt.team.ui.storage.command.settings"
             name="Настройки">
       </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+            name="Захватить">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+            name="Поместить">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+            name="Снять захват">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+            name="Обновить состояние захвата">
+      </command>
+   </extension>
+   <extension
+         point="org.eclipse.ui.decorators">
+      <decorator
+            adaptable="true"
+            class="dev.zigr.dt.team.ui.storage.StorageLockLabelDecorator"
+            id="dev.zigr.dt.team.ui.storage.lockLabelDecorator"
+            label="Захваченные объекты хранилища"
+            lightweight="true"
+            state="true">
+         <enablement>
+            <or>
+               <objectClass
+                     name="org.eclipse.core.resources.IProject">
+               </objectClass>
+               <objectClass
+                     name="org.eclipse.core.resources.IFile">
+               </objectClass>
+               <objectClass
+                     name="org.eclipse.emf.ecore.EObject">
+               </objectClass>
+            </or>
+         </enablement>
+      </decorator>
    </extension>
 
 </plugin>

@@ -130,7 +130,7 @@ public class Designer {
 	private IInfobaseSynchronizationManager getInfobaseSynchronizationManager() {
 		return infobaseSynchronizationManagerSupplier.get();
 	}
-	
+
 	public void dispose() {
 		infobaseAccessManagerSupplier.close();
 		runtimeComponentManagerSupplier.close();
@@ -549,6 +549,38 @@ public class Designer {
 	public Path lockObjects(Map<QualifiedName, Boolean> lockObjects, OperationLogger logger) throws IOException, CoreException, InterruptedException {
 		// формирование файла со списком объектов для захвата
 		Path lockObjectsList = rootDirectory.resolve("lockObjectsList.xml");
+		writeObjectsList(lockObjectsList, lockObjects);
+
+		Path log = rootDirectory.resolve("lockObjectsOut.txt");
+		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+		String additionalStartupParameters = getRepositoryConnectionParameters()
+		+ " /ConfigurationRepositoryLock -Objects " + quoteParameter(lockObjectsList.toString())
+		+ "{0}";
+
+		if (!extensionName.isEmpty()) {
+			command.additionalParameters(MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(extensionName)));
+		}
+		else {
+			command.additionalParameters(MessageFormat.format(additionalStartupParameters, ""));
+		}
+
+		logCommandContext(logger, "Захват объектов в хранилище", commandParametersForLock(additionalStartupParameters));
+		int returnCode = runCommand("Захват объектов в хранилище", command, log, logger);
+		if (returnCode != 0) {
+			throw new CoreException(createRepositoryCommandStatus(
+					"Не удалось захватить объекты в хранилище", log,
+					readAvailableExtensionNames(logger)));
+		}
+		return lockObjectsList;
+	}
+
+	public Path createObjectsList(Map<QualifiedName, Boolean> lockObjects, String fileName) throws IOException {
+		Path lockObjectsList = rootDirectory.resolve(fileName);
+		writeObjectsList(lockObjectsList, lockObjects);
+		return lockObjectsList;
+	}
+
+	private void writeObjectsList(Path lockObjectsList, Map<QualifiedName, Boolean> lockObjects) throws IOException {
 		String strTemplate = "<Object fullName = \"{0}\" includeChildObjects = \"{1}\" />";
 		try (BufferedWriter writer = new BufferedWriter(new FileWriter(lockObjectsList.toString(), StandardCharsets.UTF_8))){
 			writer.append("<Objects xmlns=\"http://v8.1c.ru/8.3/config/objects\" version=\"1.0\">"+System.lineSeparator());
@@ -565,11 +597,17 @@ public class Designer {
 		} catch (IOException e) {
 			throw e;
 		}
-		
-		Path log = rootDirectory.resolve("lockObjectsOut.txt");
+	}
+
+	public void unlockObjects(Map<QualifiedName, Boolean> lockObjects, OperationLogger logger)
+			throws IOException, CoreException, InterruptedException {
+		Path lockObjectsList = rootDirectory.resolve("unlockObjectsList.xml");
+		writeObjectsList(lockObjectsList, lockObjects);
+
+		Path log = rootDirectory.resolve("unlockObjectsOut.txt");
 		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
 		String additionalStartupParameters = getRepositoryConnectionParameters()
-		+ " /ConfigurationRepositoryLock -Objects " + quoteParameter(lockObjectsList.toString())
+		+ " /ConfigurationRepositoryUnLock -Objects " + quoteParameter(lockObjectsList.toString())
 		+ "{0}";
 		
 		if (!extensionName.isEmpty()) {
@@ -579,53 +617,13 @@ public class Designer {
 			command.additionalParameters(MessageFormat.format(additionalStartupParameters, ""));
 		}
 		
-		logCommandContext(logger, "Захват объектов в хранилище", commandParametersForLock(additionalStartupParameters));
-		int returnCode = runCommand("Захват объектов в хранилище", command, log, logger);
+		logCommandContext(logger, "Снятие захвата объектов в хранилище", commandParametersForLock(additionalStartupParameters));
+		int returnCode = runCommand("Снятие захвата объектов в хранилище", command, log, logger);
 		if (returnCode != 0) {
-			if (!extensionName.isEmpty()) { // имя расширения могло быть переименовано в EDT
-				Path logListExtNames = rootDirectory.resolve("listExtNamesOut.txt");
-				command = getCommandBuilder(logListExtNames);
-				command.listConfigurationExtensions();
-				logCommandContext(logger, "Получение списка расширений ИБ", "ListConfigurationExtensions");
-				returnCode = runCommand("Получение списка расширений ИБ", command, logListExtNames, logger);
-				if (returnCode != 0) {
-					IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(logListExtNames));
-					throw new CoreException(status);
-				}
-				else {
-					try (BufferedReader reader = new BufferedReader(new FileReader(logListExtNames.toString(),StandardCharsets.UTF_8))) {
-						String line;
-						boolean extensionIsFound = false;
-						while ((line = reader.readLine()) != null) {
-							Path logExtensionLockObjects = rootDirectory.resolve("extensionObjectsOut.txt");
-							command = getCommandBuilder(logExtensionLockObjects);
-							String extensionLockParameters = MessageFormat.format(additionalStartupParameters, " -Extension " + quoteParameter(line));
-							command.additionalParameters(extensionLockParameters);
-							logCommandContext(logger, "Захват объектов в расширении " + line, extensionLockParameters);
-							returnCode = runCommand("Захват объектов в расширении " + line, command, logExtensionLockObjects, logger);
-							if (returnCode == 0) {
-								extensionName = line;
-								extensionIsFound = true;
-								break;
-							}
-						}
-						if (!extensionIsFound) {
-							Settings storageSettings = new Settings(project.getName());
-							IStatus status = StorageUiPlugin.createErrorStatus("В ИБ не обнаружено расширение, подключенное к хранилищу "
-										+ storageSettings.getAddress());
-							throw new CoreException(status);
-						}
-					} catch (IOException e) {
-						throw e;
-					}
-				}
-			} 
-			else {
-				IStatus status = StorageUiPlugin.createErrorStatus(Files.readString(log));
-				throw new CoreException(status);
-			}
+			throw new CoreException(createRepositoryCommandStatus(
+					"Не удалось снять захват объектов в хранилище", log,
+					readAvailableExtensionNames(logger)));
 		}
-		return lockObjectsList;
 	}
 
 	public boolean isConfigurationSame(OperationLogger logger) throws CoreException, IOException, InterruptedException {
@@ -726,6 +724,65 @@ public class Designer {
 		int returnCode = process.exitValue();
 		logger.commandResult(title, log, returnCode, false);
 		return returnCode;
+	}
+
+	private List<String> readAvailableExtensionNames(OperationLogger logger) {
+		List<String> result = new ArrayList<String>();
+		if (extensionName.isEmpty()) {
+			return result;
+		}
+		Path log = rootDirectory.resolve("listExtNamesOut.txt");
+		try {
+			RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
+			command.listConfigurationExtensions();
+			logCommandContext(logger, "Получение списка расширений ИБ", "ListConfigurationExtensions");
+			int returnCode = runCommand("Получение списка расширений ИБ", command, log, logger);
+			if (returnCode != 0) {
+				logger.detail("Список расширений ИБ не получен, returnCode=" + returnCode);
+				return result;
+			}
+			try (BufferedReader reader = new BufferedReader(new FileReader(log.toString(), StandardCharsets.UTF_8))) {
+				String line;
+				while ((line = reader.readLine()) != null) {
+					String extension = line.replace("\uFEFF", "").trim();
+					if (!extension.isEmpty()) {
+						result.add(extension);
+					}
+				}
+			}
+		} catch (IOException | CoreException | InterruptedException e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			logger.detail("Список расширений ИБ не получен: " + e.getMessage());
+		}
+		return result;
+	}
+
+	private IStatus createRepositoryCommandStatus(String message, Path log, List<String> availableExtensionNames)
+			throws IOException {
+		StringBuilder details = new StringBuilder(message);
+		if (!extensionName.isEmpty()) {
+			details.append(System.lineSeparator())
+					.append("Расширение EDT: ")
+					.append(extensionName)
+					.append(System.lineSeparator())
+					.append("Проверьте, что это расширение подключено к ИБ и именно оно связано с указанным хранилищем.");
+			if (!availableExtensionNames.isEmpty()) {
+				details.append(System.lineSeparator())
+						.append("Расширения в ИБ: ")
+						.append(String.join(", ", availableExtensionNames));
+			}
+		}
+		if (Files.exists(log)) {
+			String output = Files.readString(log);
+			if (!output.isBlank()) {
+				details.append(System.lineSeparator())
+						.append(System.lineSeparator())
+						.append(output);
+			}
+		}
+		return StorageUiPlugin.createErrorStatus(details.toString());
 	}
 
 	private int logNewCommandOutput(String title, Path log, OperationLogger logger, int loggedLength) throws IOException {

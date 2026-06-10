@@ -24,6 +24,7 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
 
@@ -160,10 +161,12 @@ public class PullToTaskBranchHandler implements IHandler {
 			logGitStatus("Состояние Git перед переключением ветки", git.status().call(), logger);
 			if (taskBranchRef.equals(currentBranchRef)) {
 				logger.detail("Текущая ветка уже соответствует номеру задачи");
+				commitCurrentBranchChanges(git, taskBranch, logger);
 				refreshWorkspace(logger);
 				return;
 			}
 
+			commitCurrentBranchChanges(git, taskBranch, logger);
 			Ref localBranch = repository.exactRef(taskBranchRef);
 			if (localBranch == null) {
 				logger.detail("Локальная ветка не найдена, будет создана: " + taskBranch);
@@ -174,6 +177,41 @@ public class PullToTaskBranchHandler implements IHandler {
 			refreshWorkspace(logger);
 			logger.detail("Активная ветка Git после переключения: " + repository.getFullBranch());
 		}
+	}
+
+	private void commitCurrentBranchChanges(Git git, String taskBranch, OperationLogger logger)
+			throws GitAPIException, CoreException {
+		logger.step("Фиксация изменений Git перед переходом на ветку задачи");
+		Status status = git.status().call();
+		logGitStatus("Состояние Git перед фиксацией", status, logger);
+		if (!status.getConflicting().isEmpty()) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"Нельзя перейти на ветку задачи: в рабочем каталоге Git есть конфликты"));
+		}
+		if (status.isClean()) {
+			logger.detail("Изменений Git для фиксации нет");
+			return;
+		}
+
+		git.add().addFilepattern(".").call();
+		git.add().addFilepattern(".").setUpdate(true).call();
+		Status stagedStatus = git.status().call();
+		logGitStatus("Состояние Git после добавления файлов в индекс", stagedStatus, logger);
+		if (!hasStagedChanges(stagedStatus)) {
+			logger.detail("После добавления файлов в индекс нет изменений, доступных для коммита");
+			return;
+		}
+
+		RevCommit commit = git.commit()
+				.setMessage("Update from storage before task branch " + taskBranch)
+				.call();
+		logger.detail("Коммит перед переходом на ветку задачи: " + commit.getName());
+	}
+
+	private boolean hasStagedChanges(Status status) {
+		return !status.getAdded().isEmpty()
+				|| !status.getChanged().isEmpty()
+				|| !status.getRemoved().isEmpty();
 	}
 
 	private void logGitStatus(String title, Status status, OperationLogger logger) {
