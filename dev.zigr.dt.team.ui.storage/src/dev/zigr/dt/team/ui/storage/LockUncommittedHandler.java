@@ -9,18 +9,22 @@ import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.commands.IHandler;
 import org.eclipse.core.commands.IHandlerListener;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.Adapters;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.eclipse.xtext.naming.QualifiedName;
 
 import com._1c.g5.v8.dt.common.FileUtil;
 import com._1c.g5.v8.dt.core.filesystem.IQualifiedNameFilePathConverter;
+import com._1c.g5.v8.dt.core.platform.IResourceLookup;
 import com._1c.g5.v8.dt.platform.services.core.runtimes.execution.RuntimeExecutionException;
 import com._1c.g5.v8.dt.platform.services.model.InfobaseReference;
 import com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor;
@@ -30,6 +34,8 @@ public class LockUncommittedHandler implements IHandler {
 
 	@Inject
 	private IQualifiedNameFilePathConverter qualifiedNameFilePathConverter;
+	@Inject
+	private IResourceLookup resourceLookup;
 
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {
@@ -38,11 +44,6 @@ public class LockUncommittedHandler implements IHandler {
 		Object firstElement = selection.getFirstElement();
 		IGitBranchIssueDescriptor issueDescriptor =
 				(IGitBranchIssueDescriptor)Adapters.adapt(firstElement, IGitBranchIssueDescriptor.class);
-		if (issueDescriptor == null) {
-			MessageDialog.openError(shell, "Захватить незакоммиченное",
-					"Не удалось определить выбранную ветку хранилища");
-			return null;
-		}
 
 		OperationLogger logger;
 		try {
@@ -54,13 +55,25 @@ public class LockUncommittedHandler implements IHandler {
 		}
 
 		logger.step("Старт операции захвата незакоммиченных изменений");
-		logger.detail("ИБ: " + issueDescriptor.getInfobase().getName());
-		logger.detail("Git-репозиторий: " + issueDescriptor.getRepository().getWorkTree());
+
+		RunContext context;
+		try {
+			context = getRunContext(issueDescriptor, selection, logger);
+		} catch (CoreException | IOException | IllegalArgumentException e) {
+			StorageUiPlugin.logError(e.getMessage(), e);
+			MessageDialog.openError(shell, "Захватить незакоммиченное",
+					"Не удалось определить контекст операции: " + e.getMessage()
+					+ System.lineSeparator() + System.lineSeparator()
+					+ "Журнал: " + logger.getLogFile());
+			return null;
+		}
+		logger.detail("ИБ: " + context.infobase().getName());
+		logger.detail("Git-репозиторий: " + context.repository().getWorkTree());
 
 		Map<IProject, Map<QualifiedName, Boolean>> objectsByProject;
 		try {
 			objectsByProject = StorageChangedObjectsResolver.getUncommittedLockObjects(
-					issueDescriptor.getRepository(), qualifiedNameFilePathConverter, logger);
+					context.repository(), qualifiedNameFilePathConverter, logger);
 		} catch (CoreException | GitAPIException | IOException e) {
 			StorageUiPlugin.logError(e.getMessage(), e);
 			MessageDialog.openError(shell, "Захватить незакоммиченное",
@@ -68,6 +81,8 @@ public class LockUncommittedHandler implements IHandler {
 					+ System.lineSeparator() + System.lineSeparator()
 					+ "Журнал: " + logger.getLogFile());
 			return null;
+		} finally {
+			context.closeIfOwned();
 		}
 
 		if (objectsByProject.isEmpty()) {
@@ -82,11 +97,59 @@ public class LockUncommittedHandler implements IHandler {
 			return null;
 		}
 
-		InfobaseReference infobase = issueDescriptor.getInfobase();
 		OperationLogDialog dialog = new OperationLogDialog(shell, "Захватить незакоммиченное", logger,
-				monitor -> lockObjects(infobase, objectsByProject, logger, monitor));
+				monitor -> lockObjects(context.infobase(), objectsByProject, logger, monitor));
 		dialog.open();
 		return null;
+	}
+
+	private RunContext getRunContext(IGitBranchIssueDescriptor issueDescriptor, IStructuredSelection selection,
+			OperationLogger logger) throws CoreException, IOException {
+		if (issueDescriptor != null) {
+			return new RunContext(issueDescriptor.getRepository(), issueDescriptor.getInfobase(), false);
+		}
+
+		IProject project = getSelectedProject(selection);
+		if (project == null) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus("Не удалось определить выбранный EDT-проект"));
+		}
+		logger.detail("Выбранный EDT-проект: " + project.getName());
+
+		InfobaseReference infobase = InfobaseResolver.getDefaultInfobase(project);
+		Repository repository = openRepository(project);
+		return new RunContext(repository, infobase, true);
+	}
+
+	private IProject getSelectedProject(IStructuredSelection selection) {
+		Object firstElement = selection.getFirstElement();
+		IProject project = (IProject)Adapters.adapt(firstElement, IProject.class);
+		if (project != null) {
+			return project;
+		}
+
+		IResource resource = (IResource)Adapters.adapt(firstElement, IResource.class);
+		if (resource != null) {
+			return resource.getProject();
+		}
+
+		StorageNavigatorObjectResolver.ResolvedSelection resolvedSelection =
+				new StorageNavigatorObjectResolver(resourceLookup, qualifiedNameFilePathConverter)
+						.resolveSelection(selection);
+		return resolvedSelection.project();
+	}
+
+	private Repository openRepository(IProject project) throws IOException, CoreException {
+		if (project.getLocation() == null) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"У проекта " + project.getName() + " не найден путь на диске"));
+		}
+		FileRepositoryBuilder builder = new FileRepositoryBuilder();
+		builder.findGitDir(project.getLocation().toFile());
+		if (builder.getGitDir() == null) {
+			throw new CoreException(StorageUiPlugin.createErrorStatus(
+					"Для проекта " + project.getName() + " не найден Git-репозиторий"));
+		}
+		return builder.build();
 	}
 
 	private boolean confirm(Shell shell, Map<IProject, Map<QualifiedName, Boolean>> objectsByProject) {
@@ -189,5 +252,13 @@ public class LockUncommittedHandler implements IHandler {
 
 	@Override
 	public void removeHandlerListener(IHandlerListener handlerListener) {
+	}
+
+	private record RunContext(Repository repository, InfobaseReference infobase, boolean closeRepository) {
+		private void closeIfOwned() {
+			if (closeRepository) {
+				repository.close();
+			}
+		}
 	}
 }
