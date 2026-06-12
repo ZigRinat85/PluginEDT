@@ -15,8 +15,88 @@
                id="dev.zigr.dt.team.ui.storage.menu1"
                label="Хранилище конфигурации">
             <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+                  id="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
                   commandId="dev.zigr.dt.team.ui.storage.command.export"
                   id="dev.zigr.dt.team.ui.storage.command.export"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.import"
+                  id="dev.zigr.dt.team.ui.storage.command.import"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.importToTaskBranch"
+                  id="dev.zigr.dt.team.ui.storage.command.importToTaskBranch"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <iterate
+                        ifEmpty="false">
+                     <adapt
+                           type="com._1c.g5.v8.dt.team.git.infobases.IGitBranchIssueDescriptor">
+                     </adapt>
+                     <with
+                           variable="selection">
+                        <count
+                              value="1">
+                        </count>
+                     </with>
+                  </iterate>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
+                  id="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
                   style="push">
                <visibleWhen
                      checkEnabled="false">
@@ -68,6 +148,133 @@
                id="dev.zigr.dt.team.ui.storage.menu2"
                label="Хранилище конфигурации">
             <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.lockUncommitted"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
+                  commandId="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+                  id="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+                  style="push">
+               <visibleWhen
+                     checkEnabled="false">
+                  <with
+                        variable="selection">
+                     <iterate
+                           ifEmpty="false"
+                           operator="or">
+                        <or>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IProject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.emf.ecore.EObject">
+                           </instanceof>
+                           <instanceof
+                                 value="org.eclipse.core.resources.IFile">
+                           </instanceof>
+                        </or>
+                     </iterate>
+                  </with>
+               </visibleWhen>
+            </command>
+            <command
                   commandId="dev.zigr.dt.team.ui.storage.command.settings"
                   id="dev.zigr.dt.team.ui.storage.command.settings2"
                   style="push">
@@ -98,10 +305,74 @@
             name="Поместить в хранилище">
       </command>
       <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.LockUncommittedHandler"
+            id="dev.zigr.dt.team.ui.storage.command.lockUncommitted"
+            name="Захватить незакоммиченное">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.ImportHandler"
+            id="dev.zigr.dt.team.ui.storage.command.import"
+            name="Получить из хранилища">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.PullToTaskBranchHandler"
+            id="dev.zigr.dt.team.ui.storage.command.importToTaskBranch"
+            name="Получить из хранилища в задачу...">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageBranchBaselineHandler"
+            id="dev.zigr.dt.team.ui.storage.command.updateStorageBranchBaseline"
+            name="Обновить ветку хранилища текущей">
+      </command>
+      <command
             defaultHandler="dev.zigr.dt.team.ui.storage.SettingsHandler"
             id="dev.zigr.dt.team.ui.storage.command.settings"
             name="Настройки">
       </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.lock"
+            name="Захватить">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.commit"
+            name="Поместить">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.unlock"
+            name="Снять захват">
+      </command>
+      <command
+            defaultHandler="dev.zigr.dt.team.ui.storage.StorageUiExecutableExtensionFactory:dev.zigr.dt.team.ui.storage.StorageNavigatorHandler"
+            id="dev.zigr.dt.team.ui.storage.command.navigator.refreshLockState"
+            name="Обновить состояние захвата">
+      </command>
+   </extension>
+   <extension
+         point="org.eclipse.ui.decorators">
+      <decorator
+            adaptable="true"
+            class="dev.zigr.dt.team.ui.storage.StorageLockLabelDecorator"
+            id="dev.zigr.dt.team.ui.storage.lockLabelDecorator"
+            label="Захваченные объекты хранилища"
+            lightweight="true"
+            state="true">
+         <enablement>
+            <or>
+               <objectClass
+                     name="org.eclipse.core.resources.IProject">
+               </objectClass>
+               <objectClass
+                     name="org.eclipse.core.resources.IFile">
+               </objectClass>
+               <objectClass
+                     name="org.eclipse.emf.ecore.EObject">
+               </objectClass>
+            </or>
+         </enablement>
+      </decorator>
    </extension>
 
 </plugin>
