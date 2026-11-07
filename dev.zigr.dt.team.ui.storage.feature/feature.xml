@@ -2,11 +2,16 @@
 <feature
       id="dev.zigr.dt.team.ui.storage.feature"
       label="Configuration repository"
-      version="0.4.0.qualifier"
+      version="2026.2.1.qualifier"
       provider-name="Ziganshin Rinat">
 
    <description>
       Плагин предоставляет возможность работать EDT с хранилищем конфигурации 1С
+
+---
+Новое в версии 2026.2.1:
+- Добавлена поддержка EDT 2026.2 (ранние версии EDT не поддерживаются)
+- Исправлены мелкие ошибки
 
 ---
 Новое в версии 0.4.0:

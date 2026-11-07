@@ -142,8 +142,7 @@ public class Designer {
 			// актуализация ConfigDumpInfo.xml в ветке хранилища
 			IUpdateProjectFlow updateProjectFlow = getInfobaseSynchronizationStateManager().startUpdateProjectFlow(
 					getV8ProjectManager().getProject(project).getDtProject(), issueDescriptor.getInfobase());
-			updateProjectFlow.setActualConfigDumpInfo(sourceFolder); // передаем именно каталог, где лежит файл ConfigDumpInfo.xml
-			// updateProjectFlow.setActualGenerationId(retrieveGenerationId()); для нас необязательно
+			updateProjectFlow.loadActualConfigDumpInfo(sourceFolder); // передаем именно каталог, где лежит файл ConfigDumpInfo.xml
 			updateProjectFlow.finish();
 		}
 		else {
@@ -175,10 +174,10 @@ public class Designer {
 		Path log = rootDirectory.resolve("lockObjectsOut.txt");
 		RuntimeExecutionCommandBuilder command = getCommandBuilder(log);
 		Settings storageSettings = new Settings(project.getName());
-		String additionalStartupParameters = "/ConfigurationRepositoryF "+storageSettings.getAddress()
-		+ " /ConfigurationRepositoryN "+storageSettings.getUser()
-		+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP "+storageSettings.getPassword())
-		+ " /ConfigurationRepositoryLock -Objects " + lockObjectsList.toString()
+		String additionalStartupParameters = "/ConfigurationRepositoryF "+quote(storageSettings.getAddress())
+		+ " /ConfigurationRepositoryN "+quote(storageSettings.getUser())
+		+ (storageSettings.getPassword().isEmpty() ? "" : " /ConfigurationRepositoryP "+quote(storageSettings.getPassword()))
+		+ " /ConfigurationRepositoryLock -Objects " + quote(lockObjectsList.toString())
 		+ "{0}";
 		
 		if (!extensionName.isEmpty()) {
@@ -244,7 +243,7 @@ public class Designer {
 			+ "-FirstConfigurationType {0} -SecondConfigurationType {1} "
 			+ "-IncludeChangedObjects -IncludeDeletedObjects -IncludeAddedObjects "
 			+ "-ReportType Brief -ReportFormat txt "
-			+ "-ReportFile " + reportFile.toString();
+			+ "-ReportFile " + quote(reportFile.toString());
 		
 		if (!extensionName.isEmpty()) {
 			additionalStartupParameters = MessageFormat.format(additionalStartupParameters, 
@@ -303,6 +302,11 @@ public class Designer {
 		result = result.replaceAll("\r\n", "");
 		
 		return result;
+	}
+	
+	private String quote(String s) {
+	    if (s == null) return "";
+	    return "\"" + s + "\"";
 	}
 
 }

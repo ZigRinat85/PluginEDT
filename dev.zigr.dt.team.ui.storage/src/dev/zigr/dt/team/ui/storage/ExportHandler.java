@@ -90,6 +90,7 @@ public class ExportHandler implements IHandler {
 		// diff
 		Map<String, List<DiffEntry>> allDiff = getBranchDiff();
 		if (allDiff == null || allDiff.isEmpty()) {
+			StorageUiPlugin.logInfo("Изменения для помещения не обнаружены");
 			return null;
 		}
 		
@@ -363,6 +364,8 @@ public class ExportHandler implements IHandler {
 			return null;
 		}
 		
+		boolean isSrcFirst = false;
+		
 		for (DiffEntry entry : allDiff) {
 			String oldPath = entry.getOldPath();
 			String newPath = entry.getNewPath();
@@ -376,6 +379,9 @@ public class ExportHandler implements IHandler {
 			
 			org.eclipse.core.runtime.IPath path = new org.eclipse.core.runtime.Path(sourceFile);
 			if (path.segmentCount() < 2 || !path.segment(1).equals("src")) {
+				if (path.segmentCount() > 0 && path.segment(0).equals("src")) {
+					isSrcFirst = true;
+				}
 				continue;
 			}
 			
@@ -386,6 +392,13 @@ public class ExportHandler implements IHandler {
 				result.put(projectName, projectDiff);
 			}
 			projectDiff.add(entry);
+		}
+		
+		if (isSrcFirst) {
+			StorageUiPlugin.logInfo("Внимание! Путь к файлам проекта не должен начинаться с \"src\"!"
+					+ System.lineSeparator() + "Не следует размещать репозиторий в корневом каталоге проекта."
+					+ System.lineSeparator() + "Не следует размещать репозиторий в корневом каталоге рабочей области."
+					+ System.lineSeparator() + "https://its.1c.ru/db/edtdoc#content:10326:hdoc:t000326__рабочая-область-и-каталог-репозитория");
 		}
 		
 		return result;

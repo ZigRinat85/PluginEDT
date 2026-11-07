@@ -1,12 +1,17 @@
 ## Ссылка на файл плагина
 
-https://github.com/ZigRinat85/PluginEDT/releases/download/v0.4.0/build.zip
+https://github.com/ZigRinat85/PluginEDT/releases/download/v2026.2.1/build.zip
 
 ## Статья на ![лого инфостарт](https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg)
 
 https://infostart.ru/1c/articles/2442956/
 
 ## Новое в версии
+---
+Новое в версии 2026.2.1:
+- Добавлена поддержка EDT 2026.2 (ранние версии EDT не поддерживаются)
+- Исправлены мелкие ошибки
+
 ---
 Новое в версии 0.4.0:
 - Добавлена поддержка EDT 2025.2 (ранние версии EDT не поддерживаются)
